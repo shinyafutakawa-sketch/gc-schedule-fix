@@ -2229,14 +2229,18 @@ function renderAlerts(items){
   items.forEach(it => {
     const card = document.createElement('div');
     const weekLabel = formatTargetWeek(it.targetWeek);
-    const daysLabel = it.overdueDays > 0 ? (it.overdueDays + '日超過') : (Math.abs(it.overdueDays) + '日前');
+    // 対象週が近いことが理由でアラートに入った場合は残り日数、
+    // 対象週が未設定、または「確定連絡メールからの経過日数」が理由の場合はそちらを表示する。
+    const daysLabel = (it.overdueDays !== null && it.overdueDays !== undefined)
+      ? (it.overdueDays > 0 ? (it.overdueDays + '日超過') : (Math.abs(it.overdueDays) + '日前'))
+      : (it.daysSinceFixed !== null && it.daysSinceFixed !== undefined ? ('確定連絡から' + it.daysSinceFixed + '日経過') : '');
 
     card.className = 'bg-cta/10 border border-cta rounded-xl p-4 text-xs space-y-2';
     card.innerHTML =
       '<div class="flex items-start gap-2">' +
       '<span class="material-icons-round text-cta text-lg shrink-0">warning</span>' +
       '<div class="min-w-0 flex-1"><p class="font-bold">' + it.studentName + ' × ' + it.coachName + '</p>' +
-      '<p class="text-dark/60">確定日時: ' + (it.slot ? fmtSlot(it.slot) : '（時間未取得）') + '（対象週: ' + weekLabel + ' / ' + daysLabel + '）　生徒:' + (it.studentConfirmed ? '済' : '未') + ' / コーチ:' + (it.coachConfirmed ? '済' : '未') + '</p>' +
+      '<p class="text-dark/60">確定日時: ' + (it.slot ? fmtSlot(it.slot) : '（時間未取得）') + '（対象週: ' + weekLabel + (daysLabel ? ' / ' + daysLabel : '') + '）　生徒:' + (it.studentConfirmed ? '済' : '未') + ' / コーチ:' + (it.coachConfirmed ? '済' : '未') + '</p>' +
       '<button class="showLinksLinkBtn text-[11px] text-sub font-bold flex items-center gap-0.5 mt-1"><span class="material-icons-round text-sm">link</span>リンクを表示</button>' +
       '</div>' +
       '<button class="cancelBtn shrink-0 w-8 h-8 flex items-center justify-center rounded-lg bg-cta text-white hover:brightness-105 active:scale-95 transition shadow-sm" title="対応不要にする"><span class="material-icons-round text-lg">delete_outline</span></button>' +
