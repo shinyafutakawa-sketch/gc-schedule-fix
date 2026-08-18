@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>使い方マニュアル | 逆転コーチング 日程調整ツール</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" />
+<script>
+  tailwind.config = {
+    theme: { extend: { colors: {
+      main:'#207B97', sub:'#33A6C4', light:'#B7DDED', dark:'#104854', cta:'#F3A12C', base:'#FFFFFF',
+    }, fontFamily: { sans: ['"Hiragino Sans"','"Noto Sans JP"','system-ui','sans-serif'] } } }
+  }
+</script>
+<style>
+  body { background:#EEF3F5; }
+  .app-shell { max-width: 32rem; }
+  .step-num { min-width:1.75rem; height:1.75rem; }
+  /* このページが index.html のモーダル（iframe）に埋め込まれている場合、
+     モーダル側に既にヘッダー（タイトル＋閉じるボタン）があるため、
+     このページ自身のヘッダー（戻る矢印つき）は二重表示になってしまう。
+     JSで iframe 内かどうかを判定し、body に .embedded クラスを付けて調整する。 */
+  body.embedded .app-shell { max-width: none; box-shadow: none; }
+  body.embedded header.self-header { display: none; }
+</style>
+</head>
+<body class="min-h-screen font-sans text-dark">
+
+<div class="app-shell mx-auto min-h-screen bg-base shadow-xl">
+
+  <header class="self-header bg-dark text-white px-4 py-4 flex items-center gap-3 shadow-md sticky top-0 z-20">
+    <a href="./index.html" class="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition">
+      <span class="material-icons-round">arrow_back</span>
+    </a>
+    <div>
+      <p class="text-[10px] tracking-widest text-light/70 leading-none">逆転コーチング</p>
+      <h1 class="font-bold text-base leading-tight">使い方マニュアル</h1>
+    </div>
+  </header>
+
+  <main class="px-5 py-6 space-y-10 pb-16">
+
+    <!-- 概要 -->
+    <section data-role="all">
+      <div class="bg-light/50 border border-light rounded-xl p-4 text-sm leading-relaxed">
+        本ツールは、<strong>生徒の希望日時入力 → コーチの可能枠選択 → 運営の承認 → 自動確定連絡</strong>
+        という4ステップで面談日程を調整する仕組みです。運営が「起票」することで、生徒用・コーチ用それぞれに専用のURLが発行されます。日時の選択はカレンダー画面から行い、コーチの回答には2日間の期限が設けられています。
+      </div>
+    </section>
+
+    <!-- 全体フロー -->
+    <section data-role="all">
+      <h2 class="font-bold text-main text-sm mb-3 flex items-center gap-1">
+        <span class="material-icons-round text-base">timeline</span>全体の流れ
+      </h2>
+      <ol class="space-y-3">
+        <li class="flex gap-3 items-start">
+          <span class="step-num shrink-0 rounded-full bg-main text-white flex items-center justify-center text-xs font-bold">1</span>
+          <p class="text-sm">運営が管理画面から<strong>起票</strong>し、生徒用・コーチ用リンクを発行する</p>
+        </li>
+        <li class="flex gap-3 items-start">
+          <span class="step-num shrink-0 rounded-full bg-main text-white flex items-center justify-center text-xs font-bold">2</span>
+          <p class="text-sm">生徒がリンクから、カレンダー画面で<strong>希望時間帯（複数）</strong>を送信する</p>
+        </li>
+        <li class="flex gap-3 items-start">
+          <span class="step-num shrink-0 rounded-full bg-main text-white flex items-center justify-center text-xs font-bold">3</span>
+          <p class="text-sm">コーチに自動でメールが届き、カレンダー上で<strong>対応可能な1時間</strong>を選んで確定申請する（回答期限2日間）</p>
+        </li>
+        <li class="flex gap-3 items-start">
+          <span class="step-num shrink-0 rounded-full bg-main text-white flex items-center justify-center text-xs font-bold">4</span>
+          <p class="text-sm">運営が管理画面の<strong>承認待ち一覧</strong>から、承認者名を入力して承認する</p>
+        </li>
+        <li class="flex gap-3 items-start">
+          <span class="step-num shrink-0 rounded-full bg-cta text-white flex items-center justify-center text-xs font-bold">5</span>
+          <p class="text-sm">生徒・コーチ双方に<strong>確定連絡メール</strong>が自動送信され、メール内の「確認完了」を押すと完了</p>
+        </li>
+      </ol>
+    </section>
+
+    <!-- 生徒向け -->
+    <section data-role="student">
+      <h2 class="font-bold text-main text-sm mb-3 flex items-center gap-1">
+        <span class="material-icons-round text-base">school</span>生徒の方へ
+      </h2>
+      <div class="bg-white border border-light rounded-xl p-4 text-sm space-y-2 leading-relaxed">
+        <p>① 運営またはコーチから届いた専用リンクを開く</p>
+        <p>② 面談の種別が画面上部に表示される（対象週が決まっている場合はその週も表示される）</p>
+        <p>③ カレンダー上で、対応できる時間帯を<strong>ドラッグ（スマホはタップしたまま指を動かす）</strong>して塗る。日付の見出し部分をタップすると、その日をまとめて選択/解除できる</p>
+        <p>④ できるだけ<strong>3日以上・合計10時間以上</strong>を選ぶことが望ましい。それより少ない場合は、日程調整に時間を要する可能性がある旨の確認メッセージが表示され、同意すると送信できる</p>
+        <p>⑤ 通知先メールアドレスがあらかじめ入力されている。間違いがなければそのまま、修正が必要な場合は書き換える。備考欄には考慮してほしい事情を自由に記入できる</p>
+        <p>⑥「この内容で送信する」を押すと完了。完了画面で今後の流れ（承認待ち→確定連絡→確認完了）を確認できる</p>
+        <p class="text-dark/50 text-xs">※ 一度送信すると、同じリンクからの再送信はできない。内容の修正が必要な場合は運営に連絡する。</p>
+      </div>
+    </section>
+
+    <!-- コーチ向け -->
+    <section data-role="coach">
+      <h2 class="font-bold text-main text-sm mb-3 flex items-center gap-1">
+        <span class="material-icons-round text-base">support_agent</span>コーチの方へ
+      </h2>
+      <div class="bg-white border border-light rounded-xl p-4 text-sm space-y-2 leading-relaxed">
+        <p>① 生徒が希望日時を送信すると、自動でメールが届く。メール内には生徒の学年・志望校・コース・（種別によっては）指導科目も記載される。メール内のリンクを開く</p>
+        <p>② カレンダー上に、生徒が希望した時間帯が水色でハイライトされる。その範囲内であれば<strong>何時開始でもよく</strong>、実際に対応する<strong>1時間</strong>をクリックして選択する</p>
+        <p>③「担当コーチ_初回コーチング」の場合のみ、①まず継続的に対応できる<strong>固定の曜日・時間</strong>を選び、②「1週目もこの固定日時で実施可能か」のチェックを確認する。1週目だけ都合が悪い場合はチェックを外し、上のカレンダーからあらためて1週目専用の日時を選ぶ</p>
+        <p>④ どうしても対応できない場合は「すべての日程で対応不可」を選択する。この場合、<strong>理由の入力が必須</strong>となる。理由を入力して送信すると、運営が次点コーチを検討する（この後の対応は不要）</p>
+        <p>⑤ 通知先メールアドレスを確認し、「この内容で確定申請する」を押す</p>
+        <p>⑥ この時点でステータスは「承認待ち」となり、運営の承認後に確定連絡メールが届く</p>
+        <p class="text-dark/50 text-xs">※ 回答には<strong>2日間の期限</strong>があり、期限を過ぎるとリンクが失効し「期限切れのため回答権限がありません」と表示される。期限内に回答できない場合は、お早めに運営まで連絡する。</p>
+      </div>
+    </section>
+
+    <!-- 運営向け -->
+    <section data-role="admin">
+      <h2 class="font-bold text-main text-sm mb-3 flex items-center gap-1">
+        <span class="material-icons-round text-base">admin_panel_settings</span>運営の方へ（管理画面）
+      </h2>
+      <div class="bg-white border border-light rounded-xl p-4 text-sm space-y-3 leading-relaxed">
+        <div>
+          <p class="font-bold text-dark">■ パスワード</p>
+          <p>管理画面には簡易パスワードが設定されている。一度入力すればブラウザのタブを閉じるまで再入力は不要。</p>
+        </div>
+        <div>
+          <p class="font-bold text-dark">■ 新規起票</p>
+          <p>面談種別・対象の生徒・担当コーチを選択し「起票してリンクを発行」を押すと、生徒用・コーチ用のURLが発行される。それぞれのリンクをコピーして本人に共有する。「担当コーチ_初回コーチング」を選んだ場合は、対象の生徒を選んだ後に外部シートの組み合わせ（対象週・コース・指導科目・コーチ候補）を選ぶ必要があり、組み合わせが無い場合は起票できない。</p>
+        </div>
+        <div>
+          <p class="font-bold text-dark">■ 進行中の調整</p>
+          <p>生徒またはコーチの回答待ちの案件を面談種別ごとに確認できる。ステータスが2日以上変わっていない案件は<strong>赤枠</strong>、対象週が近づいている案件は<strong>オレンジ枠</strong>で強調される。カードをタップすると詳細（各ステータスの完了日時）とリンク一覧を確認でき、コーチ回答待ちの案件はその場で「強制的に次点打診する」ことができる（実行すると即座に旧コーチのリンクが無効になる）。</p>
+        </div>
+        <div>
+          <p class="font-bold text-dark">■ 次点発生</p>
+          <p>コーチが「全日程対応不可」を選んだ案件と、回答期限（2日間）が切れた案件がまとめて表示される。生徒の希望時間帯を確認しながら、次点コーチを検索して選び「次点コーチへ送信」すると、生徒の回答は再利用したまま次点コーチに新しいリンクで依頼できる。</p>
+        </div>
+        <div>
+          <p class="font-bold text-dark">■ 承認待ち一覧</p>
+          <p>コーチが確定申請した案件が一覧表示される。内容を確認し「承認」を押すと、承認者名を入力するダイアログが表示される。名前を入力して確定すると、ステータスが「確定」に更新され、生徒・コーチへ確定メールが自動送信される。「担当コーチ_初回コーチング」の案件は、外部の通常FIXシートへも自動的に転記される。</p>
+        </div>
+        <div>
+          <p class="font-bold text-dark">■ 未確認アラート</p>
+          <p>確定はしたが、生徒またはコーチがまだメール内の「確認完了」を押していない案件が表示される。「確定連絡メールを再送」で同じ内容を再送できる。</p>
+        </div>
+        <div>
+          <p class="font-bold text-dark">■ 初回FIXリストを表示・CRMへ記録する</p>
+          <p>ヘッダー右上のボタンから、外部の通常FIXシートでまだ調整IDが発行されていない行の一覧や、外部CRMへの記録画面（別タブ）を開ける。</p>
+        </div>
+        <div>
+          <p class="font-bold text-dark">■ リンクを表示</p>
+          <p>各案件のカードにある「リンクを表示」から、生徒用・コーチ用・生徒/保護者用（確定確認）・コーチ用（確定確認）の4種類のリンクをその場でコピーできる。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ステータス一覧 -->
+    <section data-role="all">
+      <h2 class="font-bold text-main text-sm mb-3 flex items-center gap-1">
+        <span class="material-icons-round text-base">flag</span>ステータスの意味
+      </h2>
+      <div class="bg-white border border-light rounded-xl overflow-hidden text-xs">
+        <table class="w-full">
+          <tbody>
+            <tr class="border-b border-light/70"><td class="p-2 font-bold text-dark w-32 bg-light/30">生徒回答待ち</td><td class="p-2">生徒からの希望日時提出待ち</td></tr>
+            <tr class="border-b border-light/70"><td class="p-2 font-bold text-dark bg-light/30">コーチ回答待ち</td><td class="p-2">コーチの可能枠選択待ち（2日間の回答期限あり）</td></tr>
+            <tr class="border-b border-light/70"><td class="p-2 font-bold text-dark bg-light/30">承認待ち</td><td class="p-2">運営の承認待ち</td></tr>
+            <tr class="border-b border-light/70"><td class="p-2 font-bold text-dark bg-light/30">確定</td><td class="p-2">承認済み・確定連絡メール送信済み</td></tr>
+            <tr class="border-b border-light/70"><td class="p-2 font-bold text-dark bg-light/30">確認済み</td><td class="p-2">生徒・コーチ双方が確認完了</td></tr>
+            <tr class="border-b border-light/70"><td class="p-2 font-bold text-dark bg-light/30">日程調整不可</td><td class="p-2">コーチが全枠対応不可を選択。次点コーチの検討が必要</td></tr>
+            <tr><td class="p-2 font-bold text-dark bg-light/30">回答期限切れ</td><td class="p-2">コーチが2日間反応しなかった、または運営が強制的に次点へ進めた。次点コーチの検討が必要</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- よくある質問 -->
+    <section data-role="all">
+      <h2 class="font-bold text-main text-sm mb-3 flex items-center gap-1">
+        <span class="material-icons-round text-base">help</span>よくある質問
+      </h2>
+      <div class="space-y-3 text-sm">
+        <div class="bg-white border border-light rounded-xl p-4">
+          <p class="font-bold">Q. リンクが「無効です」と表示される</p>
+          <p class="text-dark/70 mt-1">URLが正しくコピーされているかご確認ください。すでに回答済みの案件や、担当コーチが変更された後の古いリンクも同じ表示になります。</p>
+        </div>
+        <div class="bg-white border border-light rounded-xl p-4">
+          <p class="font-bold">Q.「期限切れのため回答権限がありません」と表示される</p>
+          <p class="text-dark/70 mt-1">コーチの回答期限（2日間）を過ぎたか、運営が強制的に次点へ進めたことを意味します。運営が次点コーチを検討中のため、コーチ側での対応は不要です。</p>
+        </div>
+        <div class="bg-white border border-light rounded-xl p-4">
+          <p class="font-bold">Q. 確定メールが届かない</p>
+          <p class="text-dark/70 mt-1">入力したメールアドレスに誤りがないか、迷惑メールフォルダに振り分けられていないかをご確認のうえ、運営までご連絡ください。</p>
+        </div>
+        <div class="bg-white border border-light rounded-xl p-4">
+          <p class="font-bold">Q. 希望日時をすべて提示したがコーチの都合が合わない</p>
+          <p class="text-dark/70 mt-1">コーチが「すべての日程で対応不可」を選択すると、運営の管理画面「次点発生」タブに自動的に表示されます。運営はそこから次点コーチを選んで、生徒の回答を再利用したまま同じ流れで調整を続けられます。</p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="bg-dark/95 text-light/60 text-[10px] text-center py-3">
+    © 逆転コーチング Scheduling Tool
+  </footer>
+</div>
+
+<script>
+// index.html のモーダル（iframe）に埋め込まれている場合、bodyに.embeddedを付与し、
+// このページ自身のヘッダー（戻る矢印つき）を非表示にして二重ヘッダーを防ぐ。
+// 直接 manual.html をブラウザで開いた場合（window.top === window.self）は通常表示のまま。
+(function detectEmbedded(){
+  try {
+    if (window.self !== window.top) {
+      document.body.classList.add('embedded');
+    }
+  } catch (err) {
+    // クロスオリジン等でwindow.topへのアクセスに失敗した場合も、埋め込みとみなす
+    document.body.classList.add('embedded');
+  }
+})();
+
+// URLパラメータ role（'admin' | 'student' | 'coach'）に応じて、
+// 関係のないロール向けセクション（data-role属性が一致しないもの）を非表示にする。
+// data-role="all" のセクションは常に表示する。パラメータが無い/不正な場合は全件表示。
+(function filterByRole(){
+  const params = new URLSearchParams(window.location.search);
+  const role = params.get('role');
+  const validRoles = ['admin', 'student', 'coach'];
+  if (!validRoles.includes(role)) return; // 直接manual.htmlを開いた場合などは全件表示のまま
+
+  document.querySelectorAll('section[data-role]').forEach((section) => {
+    const sectionRole = section.dataset.role;
+    if (sectionRole !== 'all' && sectionRole !== role) {
+      section.style.display = 'none';
+    }
+  });
+
+  const roleLabel = { admin: '運営', student: '生徒', coach: 'コーチ' }[role];
+  const badge = document.createElement('div');
+  badge.className = 'mx-5 -mt-4 mb-6 inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-light/60 text-main text-[11px] font-bold';
+  badge.innerHTML = '<span class="material-icons-round text-sm">filter_alt</span>' + roleLabel + '向けの内容を表示中';
+  const main = document.querySelector('main');
+  main.insertBefore(badge, main.firstChild);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,2479 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>逆転コーチング | 日程調整ツール</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" />
+<script src="./config.js"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          main: '#207B97',
+          sub:  '#33A6C4',
+          light:'#B7DDED',
+          dark: '#104854',
+          cta:  '#F3A12C',
+          base: '#FFFFFF',
+        },
+        fontFamily: {
+          sans: ['"Hiragino Sans"', '"Noto Sans JP"', 'system-ui', 'sans-serif'],
+        }
+      }
+    }
+  }
+</script>
+<style>
+  body { background:#EEF3F5; }
+  .fade-in { animation: fadeIn .3s ease both; }
+  @keyframes fadeIn { from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);} }
+  .spinner { border-top-color:#F3A12C; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  input:focus, select:focus { outline:none; }
+  ::-webkit-scrollbar{ width:6px; } ::-webkit-scrollbar-thumb{ background:#B7DDED; border-radius:4px; }
+  #toast { opacity:0; transform: translate(-50%, 8px); pointer-events:none; }
+  #toast.toast-show { opacity:1; transform: translate(-50%, 0); pointer-events:auto; }
+
+  /* --- 管理画面ナビゲーション（サイドバー / ボトムナビ共通） --- */
+  .adminNavBtn { transition: background-color .15s ease, color .15s ease; cursor:pointer; }
+  .sidebarNav .adminNavBtn { color: rgba(255,255,255,.65); }
+  .sidebarNav .adminNavBtn:hover:not(.is-active) { background: rgba(255,255,255,.07); color:#fff; }
+  .sidebarNav .adminNavBtn.is-active { background: rgba(255,255,255,.14); color:#fff; }
+  .sidebarNav .adminNavBtn.is-active .material-icons-round { color:#F3A12C; }
+  .mobileNav .adminNavBtn { color: rgba(16,72,84,.42); }
+  .mobileNav .adminNavBtn.is-active { color:#207B97; }
+  .navBadge { background:#F3A12C; color:#fff; font-size:10px; line-height:1; font-weight:700; border-radius:9999px; min-width:16px; height:16px; display:inline-flex; align-items:center; justify-content:center; padding:0 4px; }
+
+  /* --- 週次カレンダーUI（生徒の希望日時入力・コーチの選択で共用） --- */
+  .cal-grid { display:grid; touch-action:none; user-select:none; font-size:11px; }
+  .cal-corner { position:sticky; top:0; left:0; z-index:20; background:#fff; border-bottom:1px solid #B7DDED; border-right:1px solid #B7DDED; }
+  .cal-dayhead { position:sticky; top:0; z-index:10; background:#fff; border-bottom:1px solid #B7DDED; text-align:center; font-weight:700; padding:5px 0; color:#104854; white-space:nowrap; }
+  .cal-dayhead-toggleable { cursor:pointer; }
+  .cal-dayhead-toggleable:hover { background:#B7DDED; }
+  .cal-dayhead-toggleable.is-day-all { background:#207B97; color:#fff; }
+  .cal-timelabel { position:sticky; left:0; z-index:10; background:#fff; border-right:1px solid #B7DDED; color:rgba(16,72,84,.5); text-align:right; padding-right:5px; height:20px; display:flex; align-items:center; justify-content:flex-end; }
+  .cal-cell { height:20px; border-bottom:1px solid rgba(183,221,237,.6); border-right:1px solid rgba(183,221,237,.6); cursor:pointer; background:#fff; }
+  .cal-cell:hover { background:rgba(183,221,237,.3); }
+  .cal-cell.is-selected { background:#207B97; }
+  .cal-cell.is-highlighted { background:#B7DDED; cursor:default; }
+  .cal-cell.is-highlighted:hover { background:#B7DDED; }
+  .cal-cell.is-fixed-picked { background:#207B97 !important; }
+  .cal-cell.is-week1-picked { background:#F3A12C !important; }
+  .cal-readonly .cal-cell { cursor:default; }
+  /* 同じ生徒の別の調整（他のリンク）ですでに確保されている時間帯。選択不可にし、色で単発/固定を区別する。 */
+  .cal-cell.is-occupied-oneoff, .cal-cell.is-occupied-recurring {
+    cursor:not-allowed; pointer-events:none;
+  }
+  .cal-cell.is-occupied-oneoff {
+    background:repeating-linear-gradient(135deg, #C7C9D9, #C7C9D9 3px, #DEDFEA 3px, #DEDFEA 6px) !important;
+  }
+  .cal-cell.is-occupied-recurring {
+    background:repeating-linear-gradient(135deg, #D9C2CE, #D9C2CE 3px, #EFDDE5 3px, #EFDDE5 6px) !important;
+  }
+</style>
+</head>
+<body class="min-h-screen font-sans text-dark flex flex-col">
+
+  <!-- ===== ヘッダー：ロゴ + タイトル（白文字）/ 右=CRMリンク・使い方（モーダル） ===== -->
+  <header class="bg-dark shadow-md sticky top-0 z-20 h-16 shrink-0">
+    <div class="h-full px-3 sm:px-4 flex items-center justify-between gap-2 sm:gap-3">
+      <div class="flex items-center gap-2 min-w-0 flex-1">
+        <img src="./logo.png" alt="逆転コーチング" class="h-7 sm:h-9 w-auto max-w-[92px] sm:max-w-[150px] object-contain shrink-0 brightness-0 invert" />
+        <h1 class="font-bold text-xs sm:text-base text-white leading-tight truncate min-w-0" id="headerTitle">管理画面</h1>
+      </div>
+      <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        <button id="fixListBtn" type="button"
+           class="items-center gap-1 px-3 py-2 rounded-full border border-white/30 text-white text-xs font-bold hover:bg-white/10 active:scale-[.97] transition">
+          <span class="material-icons-round text-base leading-none">list_alt</span>
+          初回FIXリストを表示
+        </button>
+        <a id="crmLink" href="https://gc-crm-two.vercel.app/" target="_blank" rel="noopener"
+           class="items-center gap-1 px-3 py-2 rounded-full border border-white/30 text-white text-xs font-bold hover:bg-white/10 active:scale-[.97] transition">
+          <span class="material-icons-round text-base leading-none">sync</span>
+          CRMへ記録する
+        </a>
+        <button id="openManualBtn"
+           class="flex items-center gap-1 px-2.5 sm:px-3 py-2 rounded-full bg-cta text-white text-xs font-bold shadow hover:brightness-105 active:scale-[.97] transition shrink-0">
+          <span class="material-icons-round text-base leading-none">menu_book</span>
+          使い方
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="flex-1 flex flex-col min-h-0">
+
+    <!-- ============================================================ -->
+    <!-- 狭幅カード（生徒/コーチ/確認/エラー/ローディング）           -->
+    <!-- ============================================================ -->
+    <div id="narrowWrap" class="hidden w-full max-w-md md:max-w-2xl mx-auto bg-base shadow-xl flex-1 flex flex-col">
+
+      <!-- ===== ローディング ===== -->
+      <section id="screen-loading" class="flex-1 flex flex-col items-center justify-center gap-4 py-24">
+        <div class="w-10 h-10 rounded-full border-4 border-light spinner"></div>
+        <p class="text-sm text-dark/60">読み込んでいます…</p>
+      </section>
+
+      <!-- ===== エラー ===== -->
+      <section id="screen-error" class="hidden flex-1 flex flex-col items-center justify-center gap-3 px-6 py-24 text-center">
+        <span class="material-icons-round text-4xl text-cta">error_outline</span>
+        <p class="font-bold" id="errorTitle">リンクが無効です</p>
+        <p class="text-sm text-dark/60" id="errorMsg">URLをご確認のうえ、再度お試しください。</p>
+      </section>
+
+      <!-- ===== 生徒: 希望日時入力フォーム ===== -->
+      <section id="screen-student-form" class="hidden fade-in px-4 md:px-10 py-5 md:py-8 space-y-5">
+        <div class="bg-light/50 border border-light rounded-xl p-4">
+          <p class="text-xs text-main font-bold mb-1" id="stuTypeLabel">【三者面談】日程調整</p>
+          <p class="text-sm text-dark/80"><span id="stuStudentName">—</span> さんの面談希望日時を入力してください。担当: <span id="stuCoachName">—</span> コーチ</p>
+          <div id="stuTargetWeekBox" class="hidden mt-2 pt-2 border-t border-light flex items-center gap-1.5 text-xs font-bold text-cta">
+            <span class="material-icons-round text-base">event_available</span>
+            対象週：<span id="stuTargetWeek">—</span>（この期間からお選びください）
+          </div>
+        </div>
+
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <label class="text-sm font-bold text-dark">希望日時（カレンダーから選択）</label>
+            <span id="stuSelectionSummary" class="text-[11px] font-bold text-dark/40 shrink-0">曜日: 0/3　合計: 0.0h/10h</span>
+          </div>
+          <p class="text-[11px] text-dark/40 mb-2">対応可能な時間帯をドラッグ（スマホはタップしたまま指を動かす）して塗ってください。日付部分をタップすると、その日を一括で終日選択/解除できます。この中からコーチが実際の面談時間（1時間）を指定します。カレンダーが指で動かせない場合は、下の上下ボタンで表示範囲を移動できます。</p>
+          <div id="stuOccupiedLegend" class="hidden flex flex-wrap gap-3 text-[10px] text-dark/50 mb-1.5">
+            <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-sm" style="background:repeating-linear-gradient(135deg,#C7C9D9,#C7C9D9 3px,#DEDFEA 3px,#DEDFEA 6px)"></span>他の調整で確保済み（単発）</span>
+            <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-sm" style="background:repeating-linear-gradient(135deg,#D9C2CE,#D9C2CE 3px,#EFDDE5 3px,#EFDDE5 6px)"></span>他の調整で確保済み（毎週固定）</span>
+          </div>
+          <div class="flex justify-center">
+            <button type="button" id="stuCalScrollUpBtn" aria-label="上へスクロール"
+              class="w-10 h-7 rounded-t-lg border border-b-0 border-light bg-light/50 hover:bg-light active:bg-light flex items-center justify-center text-dark/50 transition">
+              <span class="material-icons-round text-lg">keyboard_arrow_up</span>
+            </button>
+          </div>
+          <div id="stuCalendarScrollWrap" class="border border-light overflow-auto max-h-80">
+            <div id="stuCalendarGrid"></div>
+          </div>
+          <div class="flex justify-center">
+            <button type="button" id="stuCalScrollDownBtn" aria-label="下へスクロール"
+              class="w-10 h-7 rounded-b-lg border border-t-0 border-light bg-light/50 hover:bg-light active:bg-light flex items-center justify-center text-dark/50 transition">
+              <span class="material-icons-round text-lg">keyboard_arrow_down</span>
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <label class="text-sm font-bold text-dark block mb-1">通知先メールアドレス</label>
+          <input id="stuEmail" type="email" placeholder="example@juku.jp"
+            class="w-full rounded-lg border border-light p-3 text-sm focus:ring-2 focus:ring-sub focus:border-sub transition" />
+          <p class="text-[11px] text-dark/40 mt-1">登録済みのアドレスを表示しています。必要に応じて修正してください。</p>
+        </div>
+
+        <div>
+          <label class="text-sm font-bold text-dark block mb-1">備考（考慮すべき事情など）</label>
+          <textarea id="stuRemarks" rows="3" placeholder="例：7/20は部活の大会のため終日不可です"
+            class="w-full rounded-lg border border-light p-3 text-sm focus:ring-2 focus:ring-sub focus:border-sub transition resize-none"></textarea>
+          <p class="text-[11px] text-dark/40 mt-1">任意項目です。日程調整の際に考慮してほしいことがあれば入力してください。</p>
+        </div>
+
+        <div>
+          <p id="stuRequirementHint" class="hidden text-xs text-cta font-bold text-center mb-2">
+            あと少しで送信できます（3日以上・合計10時間以上を選択してください）
+          </p>
+          <button id="submitStudentBtn" disabled
+            class="w-full py-3 rounded-lg bg-cta text-white font-bold shadow hover:brightness-105 active:scale-[.98] transition disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:brightness-100">
+            この内容で送信する
+          </button>
+        </div>
+      </section>
+
+      <!-- ===== 生徒: 送信完了（フロー図つき） ===== -->
+      <section id="screen-student-thanks" class="hidden fade-in px-4 md:px-10 py-8 md:py-12 space-y-8 text-center">
+        <div class="flex flex-col items-center gap-2">
+          <div class="w-16 h-16 rounded-full bg-light flex items-center justify-center">
+            <span class="material-icons-round text-main text-3xl">mark_email_read</span>
+          </div>
+          <h2 class="font-bold text-lg">送信が完了しました</h2>
+          <p class="text-sm text-dark/60 leading-relaxed">認証されたメールアドレスに<br>確定連絡が送信されます。</p>
+        </div>
+
+        <div>
+          <p class="text-xs font-bold text-dark/50 mb-3 text-left">今後の流れ</p>
+          <div id="flowSteps" class="flex items-start justify-between"></div>
+        </div>
+      </section>
+
+      <!-- ===== コーチ: 可能枠選択フォーム ===== -->
+      <section id="screen-coach-form" class="hidden fade-in px-4 md:px-10 py-5 md:py-8 space-y-5">
+        <div class="bg-light/50 border border-light rounded-xl p-4">
+          <p class="text-xs text-main font-bold mb-1" id="coachTypeLabel">【三者面談】日程調整</p>
+          <p class="text-sm text-dark/80"><span id="coachStudentName">—</span> さんの希望時間帯の中から候補を1つ選び、実際の面談時間（1時間）を指定してください。</p>
+        </div>
+
+        <div id="coachStudentInfoBox" class="hidden bg-white border border-light rounded-xl p-4 text-xs space-y-1">
+          <p class="text-xs font-bold text-dark/50 mb-1 flex items-center gap-1"><span class="material-icons-round text-base text-sub">badge</span>生徒情報</p>
+          <p><span class="text-dark/40">学年：</span><span id="coachStudentGrade">—</span></p>
+          <p><span class="text-dark/40">志望校：</span><span id="coachStudentSchool">—</span></p>
+          <p><span class="text-dark/40">コース：</span><span id="coachStudentCourse">—</span></p>
+          <p id="coachStudentSubjectRow" class="hidden"><span class="text-dark/40">指導科目：</span><span id="coachStudentSubject">—</span></p>
+        </div>
+
+        <div id="coachHandoverBox" class="hidden bg-sub/10 border border-sub rounded-xl p-4 text-sm">
+          <p class="text-xs font-bold text-sub flex items-center gap-1 mb-1">
+            <span class="material-icons-round text-base">forward_to_inbox</span>運営からの引き継ぎ事項
+          </p>
+          <p class="text-dark/80 whitespace-pre-wrap" id="coachHandoverText">—</p>
+        </div>
+
+        <div id="coachRemarksBox" class="hidden bg-cta/10 border border-cta rounded-xl p-4 text-sm">
+          <p class="text-xs font-bold text-cta flex items-center gap-1 mb-1">
+            <span class="material-icons-round text-base">info</span>生徒からの備考
+          </p>
+          <p class="text-dark/80 whitespace-pre-wrap" id="coachRemarksText">—</p>
+        </div>
+
+        <div id="coachFixedNotice" class="hidden bg-light/40 border border-light rounded-xl p-3 items-start gap-2 text-xs text-dark/70">
+          <span class="material-icons-round text-main text-base shrink-0">event_repeat</span>
+          <p>原則として毎週同じ曜日・時間帯で実施するため、下のカレンダーで<strong>継続して面談が可能な曜日・時間帯（固定）</strong>をまず選択してください。</p>
+        </div>
+
+        <div>
+          <p class="text-sm font-bold text-dark mb-1" id="coachCalendarLabel">生徒の希望時間帯から選択</p>
+          <p class="text-[11px] text-dark/40 mb-2">水色＝生徒が希望した時間帯です。その範囲内で、実際に対応する1時間をクリックしてください。カレンダーが指で動かせない場合は、下の上下ボタンで表示範囲を移動できます。</p>
+          <div id="coachOccupiedLegend" class="hidden flex flex-wrap gap-3 text-[10px] text-dark/50 mb-1.5">
+            <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-sm" style="background:repeating-linear-gradient(135deg,#C7C9D9,#C7C9D9 3px,#DEDFEA 3px,#DEDFEA 6px)"></span>他の調整で確保済み（単発）</span>
+            <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-sm" style="background:repeating-linear-gradient(135deg,#D9C2CE,#D9C2CE 3px,#EFDDE5 3px,#EFDDE5 6px)"></span>他の調整で確保済み（毎週固定）</span>
+          </div>
+          <div class="flex justify-center">
+            <button type="button" id="coachCalScrollUpBtn" aria-label="上へスクロール"
+              class="w-10 h-7 rounded-t-lg border border-b-0 border-light bg-light/50 hover:bg-light active:bg-light flex items-center justify-center text-dark/50 transition">
+              <span class="material-icons-round text-lg">keyboard_arrow_up</span>
+            </button>
+          </div>
+          <div id="coachCalendarScrollWrap" class="border border-light overflow-auto max-h-80">
+            <div id="coachCalendarGrid"></div>
+          </div>
+          <div class="flex justify-center">
+            <button type="button" id="coachCalScrollDownBtn" aria-label="下へスクロール"
+              class="w-10 h-7 rounded-b-lg border border-t-0 border-light bg-light/50 hover:bg-light active:bg-light flex items-center justify-center text-dark/50 transition">
+              <span class="material-icons-round text-lg">keyboard_arrow_down</span>
+            </button>
+          </div>
+          <p id="coachPickedLabel" class="text-xs font-bold text-main mt-2 hidden"></p>
+        </div>
+
+        <!-- 担当コーチ_初回コーチングのみ表示：1週目の扱い -->
+        <div id="coachWeek1Section" class="hidden space-y-3">
+          <p id="coachWeek1Placeholder" class="text-xs text-dark/40">上のカレンダーで固定の曜日・時間を選択すると、ここに「1週目も同じ日程か」の確認が表示される</p>
+          <div id="coachWeek1CheckboxRow" class="hidden space-y-3">
+            <label class="flex items-center gap-2 p-3 rounded-lg border border-light text-sm cursor-pointer bg-white">
+              <input type="checkbox" id="coachWeek1SameCheckbox" checked class="accent-main w-4 h-4" />
+              1週目もこの固定日時で実施可能
+            </label>
+            <div id="coachWeek1PickerBox" class="hidden space-y-2">
+              <p class="text-xs font-bold text-dark">1週目だけの面談日時を、上のカレンダーから選択してください</p>
+              <p id="coachWeek1PickedLabel" class="text-xs font-bold text-cta hidden"></p>
+            </div>
+          </div>
+        </div>
+
+        <label class="flex items-center gap-2 p-3 rounded-lg border border-dashed border-dark/30 text-sm cursor-pointer">
+          <input type="radio" name="coachSlot" value="NONE" id="coachNoneRadio" class="accent-cta" />
+          すべての日程で対応不可
+        </label>
+
+        <div id="coachDeclineReasonBox" class="hidden">
+          <label class="text-sm font-bold text-dark block mb-1">対応不可の理由（必須）</label>
+          <textarea id="coachDeclineReason" rows="3" placeholder="例：ご提示いただいた時間帯はすべて他の授業と重なっております"
+            class="w-full rounded-lg border border-light p-3 text-sm focus:ring-2 focus:ring-sub focus:border-sub transition resize-none"></textarea>
+        </div>
+
+        <div>
+          <label class="text-sm font-bold text-dark block mb-1">通知先メールアドレス</label>
+          <input id="coachEmail" type="email" placeholder="coach@juku.jp"
+            class="w-full rounded-lg border border-light p-3 text-sm focus:ring-2 focus:ring-sub focus:border-sub transition" />
+          <p class="text-[11px] text-dark/40 mt-1">登録済みのアドレスを表示しています。必要に応じて修正してください。</p>
+        </div>
+
+        <button id="submitCoachBtn"
+          class="w-full py-3 rounded-lg bg-cta text-white font-bold shadow hover:brightness-105 active:scale-[.98] transition">
+          この内容で確定申請する
+        </button>
+      </section>
+
+      <!-- ===== コーチ: 送信完了 ===== -->
+      <section id="screen-coach-thanks" class="hidden fade-in px-4 md:px-10 py-16 space-y-4 text-center">
+        <div id="coachThanksIconWrap" class="w-16 h-16 mx-auto rounded-full bg-light flex items-center justify-center">
+          <span id="coachThanksIcon" class="material-icons-round text-main text-3xl">how_to_reg</span>
+        </div>
+        <h2 class="font-bold text-lg" id="coachThanksTitle">確定申請を送信しました</h2>
+        <p class="text-sm text-dark/60 leading-relaxed" id="coachThanksText">運営の承認後、確定連絡メールが<br>届きます。今しばらくお待ちください。</p>
+      </section>
+
+      <!-- ===== 確認完了（メールのリンクから遷移） ===== -->
+      <section id="screen-confirm" class="hidden fade-in px-4 md:px-10 py-8 md:py-12 space-y-6">
+        <div class="bg-light/50 border border-light rounded-xl p-4 text-sm space-y-1">
+          <p><span class="text-dark/50">面談種別：</span><span id="cfType">—</span></p>
+          <p><span class="text-dark/50">生徒：</span><span id="cfStudent">—</span></p>
+          <p><span class="text-dark/50">担当：</span><span id="cfCoach">—</span></p>
+          <p><span class="text-dark/50">確定日時：</span><span class="font-bold text-dark" id="cfSlot">—</span></p>
+        </div>
+        <div id="cfHandoverBox" class="hidden bg-sub/10 border border-sub rounded-xl p-4 text-sm">
+          <p class="text-xs font-bold text-sub flex items-center gap-1 mb-1">
+            <span class="material-icons-round text-base">forward_to_inbox</span>運営からの引き継ぎ事項
+          </p>
+          <p class="text-dark/80 whitespace-pre-wrap" id="cfHandoverText">—</p>
+        </div>
+        <div id="cfCoachNoticeBox" class="hidden bg-light/50 border border-light rounded-xl p-4 text-xs leading-relaxed space-y-3">
+          <div>
+            <p class="font-bold text-dark mb-1">●コーチ2名体制生徒 引き継ぎ作成のお願い</p>
+            <p class="text-dark/70">アドバンスコース以上の生徒さんは、毎回コーチング終了後にもうお一人のコーチへ向けて、下記引き継ぎ作成をお願いします。</p>
+            <p class="text-dark/70">引き継ぎは、稼働報告/日程変更アプリにて作成をお願いします。</p>
+          </div>
+          <div>
+            <p class="font-bold text-dark mb-1">●宿題範囲について</p>
+            <p class="text-dark/70">宿題の登録ですが、『ご自身の担当科目のみ登録』をお願いします！</p>
+          </div>
+        </div>
+        <button id="confirmBtn"
+          class="w-full py-3 rounded-lg bg-main text-white font-bold shadow hover:brightness-105 active:scale-[.98] transition">
+          確認完了にする
+        </button>
+        <div id="cfDone" class="hidden text-center space-y-2 pt-4">
+          <span class="material-icons-round text-main text-3xl">task_alt</span>
+          <p class="font-bold">確認済みにしました。ありがとうございました。</p>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- 管理画面：PC=サイドバー付きダッシュボード / スマホ=ボトムナビ  -->
+    <!-- ============================================================ -->
+    <div id="adminWrap" class="hidden w-full flex-1 md:flex">
+
+      <!-- ---- PC: 左サイドバー ---- -->
+      <aside class="sidebarNav hidden md:flex md:flex-col w-60 shrink-0 bg-dark sticky top-16 h-[calc(100vh-4rem)] overflow-y-auto px-3 py-5 gap-1">
+        <p class="text-[10px] font-bold tracking-widest text-white/40 px-3 mb-1">メニュー</p>
+        <button data-tab="create" class="adminNavBtn w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-bold">
+          <span class="material-icons-round text-lg">add_link</span>
+          <span class="flex-1 text-left">新規起票</span>
+        </button>
+        <button data-tab="progress" class="adminNavBtn w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-bold">
+          <span class="material-icons-round text-lg">hourglass_top</span>
+          <span class="flex-1 text-left">進行中の調整</span>
+        </button>
+        <button data-tab="needsNextCoach" class="adminNavBtn w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-bold">
+          <span class="material-icons-round text-lg">person_search</span>
+          <span class="flex-1 text-left">次点発生</span>
+          <span id="badge-needsNextCoach" class="navBadge hidden">0</span>
+        </button>
+        <button data-tab="pending" class="adminNavBtn w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-bold">
+          <span class="material-icons-round text-lg">pending_actions</span>
+          <span class="flex-1 text-left">承認待ち一覧</span>
+          <span id="badge-pending" class="navBadge hidden">0</span>
+        </button>
+        <button data-tab="alerts" class="adminNavBtn w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-bold">
+          <span class="material-icons-round text-lg">warning</span>
+          <span class="flex-1 text-left">未確認アラート</span>
+          <span id="badge-alerts" class="navBadge hidden">0</span>
+        </button>
+      </aside>
+
+      <!-- ---- メインコンテンツ（fluid） ---- -->
+      <div class="flex-1 min-w-0 px-4 md:px-8 py-5 md:py-8 pb-24 md:pb-10">
+        <div class="max-w-[1600px]">
+
+          <!-- 自動更新ステータス（全タブ共通） -->
+          <div class="flex items-center justify-between mb-4 text-xs">
+            <span id="dashboardLastUpdated" class="text-dark/40">最終更新: --:--:--</span>
+            <button id="refreshDashboardBtn" type="button"
+               class="flex items-center gap-1 px-3 py-1.5 rounded-full border border-light text-dark/60 font-bold hover:bg-light/40 transition">
+              <span class="material-icons-round text-sm">refresh</span>更新
+            </button>
+          </div>
+
+          <!-- パネル: 新規起票 -->
+          <section id="panel-create" class="admin-panel fade-in">
+            <div class="mb-4">
+              <h2 class="text-lg font-bold text-dark">新規起票</h2>
+              <p class="text-xs text-dark/50 mt-0.5">対象の生徒・面談種別・担当コーチを選択し、専用リンクを発行します</p>
+            </div>
+
+            <div class="bg-white border border-light rounded-2xl shadow-sm p-5 md:p-7">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+                <div>
+                  <label class="text-xs font-bold text-dark/70 flex items-center gap-1 mb-1.5">
+                    <span class="material-icons-round text-sub text-base">event_note</span>面談種別
+                  </label>
+                  <select id="newType" class="w-full rounded-lg border border-light p-3 text-sm focus:ring-2 focus:ring-sub bg-white">
+                    <option value="" disabled selected>面談種別を選択してください</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label class="text-xs font-bold text-dark/70 flex items-center gap-1 mb-1.5">
+                    <span class="material-icons-round text-sub text-base">person</span>対象の生徒
+                  </label>
+                  <div class="relative">
+                    <input id="newStudentSearch" type="text" autocomplete="off" placeholder="生徒名またはコードで検索…"
+                      class="w-full rounded-lg border border-light p-3 pr-9 text-sm focus:ring-2 focus:ring-sub bg-white" />
+                    <span class="material-icons-round absolute right-2.5 top-1/2 -translate-y-1/2 text-dark/30 text-lg pointer-events-none">search</span>
+                    <input type="hidden" id="newStudentId" />
+                    <div id="studentDropdown" class="hidden absolute z-30 mt-1 w-full max-h-56 overflow-y-auto bg-white border border-light rounded-lg shadow-lg"></div>
+                  </div>
+                </div>
+
+                <div>
+                  <label class="text-xs font-bold text-dark/70 flex items-center gap-1 mb-1.5">
+                    <span class="material-icons-round text-sub text-base">support_agent</span>担当コーチ
+                  </label>
+                  <div class="relative">
+                    <input id="newCoachSearch" type="text" autocomplete="off" placeholder="コーチ名またはコードで検索…"
+                      class="w-full rounded-lg border border-light p-3 pr-9 text-sm focus:ring-2 focus:ring-sub bg-white" />
+                    <span class="material-icons-round absolute right-2.5 top-1/2 -translate-y-1/2 text-dark/30 text-lg pointer-events-none">search</span>
+                    <input type="hidden" id="newCoachId" />
+                    <div id="coachDropdown" class="hidden absolute z-30 mt-1 w-full max-h-56 overflow-y-auto bg-white border border-light rounded-lg shadow-lg"></div>
+                  </div>
+                </div>
+
+                <div>
+                  <label class="text-xs font-bold text-dark/70 flex items-center gap-1 mb-1.5">
+                    <span class="material-icons-round text-sub text-base">badge</span>起票者（あなたの名前）
+                  </label>
+                  <div class="relative">
+                    <input id="newCreatedBy" type="text" autocomplete="off" placeholder="候補から選択、または直接入力"
+                      class="w-full rounded-lg border border-light p-3 pr-9 text-sm focus:ring-2 focus:ring-sub bg-white" />
+                    <span class="material-icons-round absolute right-2.5 top-1/2 -translate-y-1/2 text-dark/30 text-lg pointer-events-none">search</span>
+                    <div id="createdByDropdown" class="hidden absolute z-30 mt-1 w-full max-h-56 overflow-y-auto bg-white border border-light rounded-lg shadow-lg"></div>
+                  </div>
+                </div>
+
+                <div class="md:col-span-2">
+                  <label class="text-xs font-bold text-dark/70 flex items-center gap-1 mb-1.5">
+                    <span class="material-icons-round text-sub text-base">date_range</span>対象週（開始日・任意）
+                  </label>
+                  <input id="newTargetWeek" type="date"
+                    class="w-full md:w-1/2 rounded-lg border border-light p-3 text-sm focus:ring-2 focus:ring-sub bg-white" />
+                  <p class="text-[11px] text-dark/40 mt-1" id="newTargetWeekHint">初回コーチングなど、実施週が決まっている場合にその週の開始日（月曜日など）を選択してください。生徒画面の案内、および管理画面のアラート判定に使用されます。</p>
+                </div>
+
+                <div id="externalComboSection" class="hidden md:col-span-2 space-y-2 border-t border-light pt-4">
+                  <label class="text-xs font-bold text-dark/70 flex items-center gap-1">
+                    <span class="material-icons-round text-sub text-base">fact_check</span>外部シート（通常FIX）の組み合わせを選択
+                  </label>
+                  <p class="text-[11px] text-dark/40">対象の生徒に紐づく、まだ調整IDが発行されていない組み合わせです。選択すると対象週が自動設定されます。組み合わせが無い場合は起票できません。</p>
+                  <div id="externalComboList" class="space-y-2 max-h-72 overflow-y-auto"></div>
+                </div>
+              </div>
+
+              <div class="flex flex-col md:flex-row md:items-center gap-3 mt-6">
+                <button id="createBtn" class="w-full md:w-auto md:px-8 py-2.5 rounded-lg bg-main text-white font-bold text-sm hover:bg-sub transition flex items-center justify-center gap-1.5">
+                  <span class="material-icons-round text-base">add_link</span>起票してリンクを発行
+                </button>
+              </div>
+
+              <!-- 発行結果：リンク+コピー -->
+              <div id="createResult" class="hidden mt-5 pt-5 border-t border-light grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div class="md:col-span-2 flex items-center gap-1.5 text-xs font-bold text-main">
+                  <span class="material-icons-round text-base">check_circle</span>リンクを発行しました
+                </div>
+                <div class="bg-light/40 rounded-lg p-3 border border-light space-y-1.5">
+                  <p class="text-[10px] font-bold text-dark/50">生徒用リンク</p>
+                  <div class="flex items-center gap-1.5">
+                    <input id="studentLinkInput" type="text" readonly
+                      class="flex-1 min-w-0 text-[11px] bg-white rounded-md border border-light px-2 py-1.5 truncate" />
+                    <button id="copyStudentBtn" data-default-label="コピー"
+                      class="shrink-0 px-2.5 py-1.5 rounded-md bg-main text-white text-[11px] font-bold hover:bg-sub transition flex items-center gap-1">
+                      <span class="material-icons-round text-sm">content_copy</span><span class="btnLabel">コピー</span>
+                    </button>
+                  </div>
+                </div>
+                <div class="bg-light/40 rounded-lg p-3 border border-light space-y-1.5">
+                  <p class="text-[10px] font-bold text-dark/50">コーチ用リンク</p>
+                  <div class="flex items-center gap-1.5">
+                    <input id="coachLinkInput" type="text" readonly
+                      class="flex-1 min-w-0 text-[11px] bg-white rounded-md border border-light px-2 py-1.5 truncate" />
+                    <button id="copyCoachBtn" data-default-label="コピー"
+                      class="shrink-0 px-2.5 py-1.5 rounded-md bg-main text-white text-[11px] font-bold hover:bg-sub transition flex items-center gap-1">
+                      <span class="material-icons-round text-sm">content_copy</span><span class="btnLabel">コピー</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- パネル: 承認待ち一覧 -->
+          <section id="panel-pending" class="admin-panel hidden fade-in">
+            <div class="mb-4">
+              <h2 class="text-lg font-bold text-dark">承認待ち一覧</h2>
+              <p class="text-xs text-dark/50 mt-0.5">コーチが確定申請した案件です。内容を確認し承認してください</p>
+            </div>
+            <div id="pendingList" class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3"></div>
+            <p id="pendingEmpty" class="hidden text-sm text-dark/40 text-center py-16">承認待ちの案件はありません</p>
+          </section>
+
+          <!-- パネル: 未確認アラート -->
+          <section id="panel-alerts" class="admin-panel hidden fade-in">
+            <div class="mb-4">
+              <h2 class="text-lg font-bold text-dark">未確認アラート</h2>
+              <p class="text-xs text-dark/50 mt-0.5">確定日が近いのに、生徒またはコーチが未確認の案件です</p>
+            </div>
+            <div id="alertList" class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3"></div>
+            <p id="alertEmpty" class="hidden text-sm text-dark/40 text-center py-16">アラートはありません</p>
+          </section>
+
+          <!-- パネル: 進行中の調整 -->
+          <section id="panel-progress" class="admin-panel hidden fade-in">
+            <div class="mb-4">
+              <h2 class="text-lg font-bold text-dark">進行中の調整</h2>
+              <p class="text-xs text-dark/50 mt-0.5">生徒またはコーチの回答待ちの案件です（面談種別ごとに表示）。カードをタップすると詳細・強制次点打診ができます</p>
+            </div>
+            <div id="progressList" class="space-y-6"></div>
+            <p id="progressEmpty" class="hidden text-sm text-dark/40 text-center py-16">進行中の案件はありません</p>
+          </section>
+
+          <!-- パネル: 次点発生 -->
+          <section id="panel-needsNextCoach" class="admin-panel hidden fade-in">
+            <div class="mb-4">
+              <h2 class="text-lg font-bold text-dark">次点発生</h2>
+              <p class="text-xs text-dark/50 mt-0.5">コーチが全日程「対応不可」を選んだ案件です。次点コーチを選ぶと、生徒が入力済みの希望日時はそのまま使い回し、同じリンクで次点コーチに通知します</p>
+            </div>
+            <div id="needsNextCoachList" class="grid grid-cols-1 lg:grid-cols-2 gap-3"></div>
+            <p id="needsNextCoachEmpty" class="hidden text-sm text-dark/40 text-center py-16">次点対応が必要な案件はありません</p>
+          </section>
+
+        </div>
+      </div>
+
+      <!-- ---- スマホ: ボトムナビ ---- -->
+      <nav class="mobileNav md:hidden fixed bottom-0 inset-x-0 z-30 bg-white border-t border-light flex shadow-[0_-2px_10px_rgba(0,0,0,0.08)]">
+        <button data-tab="create" class="adminNavBtn flex-1 relative flex flex-col items-center justify-center gap-0.5 py-2">
+          <span class="material-icons-round text-xl">add_link</span>
+          <span class="text-[10px] font-bold">新規起票</span>
+        </button>
+        <button data-tab="progress" class="adminNavBtn flex-1 relative flex flex-col items-center justify-center gap-0.5 py-2">
+          <span class="material-icons-round text-xl">hourglass_top</span>
+          <span class="text-[10px] font-bold">進行中</span>
+        </button>
+        <button data-tab="needsNextCoach" class="adminNavBtn flex-1 relative flex flex-col items-center justify-center gap-0.5 py-2">
+          <span class="material-icons-round text-xl">person_search</span>
+          <span class="text-[10px] font-bold">次点</span>
+          <span id="badge-needsNextCoach-m" class="navBadge hidden absolute top-1 right-[18%]">0</span>
+        </button>
+        <button data-tab="pending" class="adminNavBtn flex-1 relative flex flex-col items-center justify-center gap-0.5 py-2">
+          <span class="material-icons-round text-xl">pending_actions</span>
+          <span class="text-[10px] font-bold">承認待ち</span>
+          <span id="badge-pending-m" class="navBadge hidden absolute top-1 right-[22%]">0</span>
+        </button>
+        <button data-tab="alerts" class="adminNavBtn flex-1 relative flex flex-col items-center justify-center gap-0.5 py-2">
+          <span class="material-icons-round text-xl">warning</span>
+          <span class="text-[10px] font-bold">未確認</span>
+          <span id="badge-alerts-m" class="navBadge hidden absolute top-1 right-[22%]">0</span>
+        </button>
+      </nav>
+    </div>
+
+  </main>
+
+  <footer id="pageFooter" class="hidden bg-dark/95 text-light/60 text-[10px] text-center py-3 shrink-0">
+    © 逆転コーチング Scheduling Tool
+  </footer>
+
+  <!-- トースト通知 -->
+  <div id="toast" class="fixed left-1/2 bottom-6 z-50 px-4 py-2.5 rounded-full text-white text-xs font-bold shadow-lg transition-all duration-300 bg-main"></div>
+
+  <!-- 使い方マニュアル モーダル -->
+  <div id="manualModal" class="hidden fixed inset-0 z-50">
+    <div id="manualBackdrop" class="absolute inset-0 bg-dark/60"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-3 md:p-6">
+      <div class="relative bg-white w-full max-w-3xl h-[88vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+        <div class="flex items-center justify-between px-4 py-3 bg-dark text-white shrink-0">
+          <p class="font-bold text-sm flex items-center gap-2"><span class="material-icons-round text-base">menu_book</span>使い方マニュアル</p>
+          <button id="closeManualBtn" class="w-8 h-8 rounded-full hover:bg-white/10 flex items-center justify-center transition">
+            <span class="material-icons-round">close</span>
+          </button>
+        </div>
+        <iframe id="manualFrame" src="" title="使い方マニュアル" class="flex-1 w-full border-0"></iframe>
+      </div>
+    </div>
+  </div>
+
+  <!-- 初回FIXリスト モーダル -->
+  <div id="fixListModal" class="hidden fixed inset-0 z-50">
+    <div id="fixListBackdrop" class="absolute inset-0 bg-dark/60"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-3 md:p-6">
+      <div class="relative bg-white w-full max-w-3xl h-[88vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+        <div class="flex items-center justify-between px-4 py-3 bg-dark text-white shrink-0">
+          <p class="font-bold text-sm flex items-center gap-2"><span class="material-icons-round text-base">list_alt</span>初回FIXリスト（調整ID未発行）</p>
+          <button id="closeFixListBtn" class="w-8 h-8 rounded-full hover:bg-white/10 flex items-center justify-center transition">
+            <span class="material-icons-round">close</span>
+          </button>
+        </div>
+        <div class="flex-1 overflow-y-auto p-4 bg-[#EEF3F5]">
+          <p class="text-[11px] text-dark/40 mb-3">外部「通常FIX」シートのうち、まだ調整IDが発行されていない行です。対象週（A列）の早い順に並んでいます（日付未設定は最後）。</p>
+          <div id="fixListContent" class="space-y-2 text-sm"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 起票確認モーダル（コーチへの引き継ぎ事項を入力できる） -->
+  <div id="createConfirmModal" class="hidden fixed inset-0 z-50">
+    <div id="createConfirmBackdrop" class="absolute inset-0 bg-dark/60"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="relative bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+        <div class="px-5 py-4 bg-dark text-white flex items-center justify-between shrink-0">
+          <p class="font-bold text-sm flex items-center gap-2"><span class="material-icons-round text-base">fact_check</span>起票内容の確認</p>
+          <button id="closeCreateConfirmBtn" type="button" class="w-8 h-8 rounded-full hover:bg-white/10 flex items-center justify-center transition">
+            <span class="material-icons-round">close</span>
+          </button>
+        </div>
+        <div class="p-5 space-y-4 overflow-y-auto">
+          <div id="createConfirmSummary" class="bg-light/40 rounded-lg p-3 text-xs space-y-1"></div>
+          <div>
+            <label class="text-xs font-bold text-dark/70 block mb-1">コーチへの引き継ぎ事項（任意）</label>
+            <textarea id="createHandoverNote" rows="4" placeholder="例：保護者の意向で英語を優先的に見てほしいとのことです"
+              class="w-full rounded-lg border border-light p-3 text-sm focus:ring-2 focus:ring-sub focus:border-sub transition resize-none"></textarea>
+            <p class="text-[11px] text-dark/40 mt-1">この内容はコーチのみ確認できます（生徒には表示されません）。記入不要な場合は空欄のまま発行できます。</p>
+          </div>
+        </div>
+        <div class="p-5 pt-0 flex gap-2 shrink-0">
+          <button id="createConfirmBackBtn" type="button"
+            class="flex-1 py-2.5 rounded-lg border border-light text-dark/60 text-sm font-bold hover:bg-light/30 transition">戻る</button>
+          <button id="createConfirmSubmitBtn" type="button"
+            class="flex-1 py-2.5 rounded-lg bg-main text-white text-sm font-bold hover:bg-sub transition">発行する</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 承認確認モーダル -->
+  <div id="approveModal" class="hidden fixed inset-0 z-50">
+    <div id="approveModalBackdrop" class="absolute inset-0 bg-dark/60"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="relative bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden">
+        <div class="px-5 py-4 bg-dark text-white">
+          <p class="font-bold text-sm flex items-center gap-2"><span class="material-icons-round text-base">task_alt</span>この案件を承認します</p>
+        </div>
+        <div class="p-5 space-y-4">
+          <div>
+            <label class="text-xs font-bold text-dark/70 flex items-center gap-1 mb-1.5">
+              <span class="material-icons-round text-sub text-base">badge</span>承認者（あなたの名前）
+            </label>
+            <div class="relative">
+              <input id="approveModalNameInput" type="text" autocomplete="off" placeholder="候補から選択、または直接入力"
+                class="w-full rounded-lg border border-light p-3 pr-9 text-sm focus:ring-2 focus:ring-sub bg-white" />
+              <span class="material-icons-round absolute right-2.5 top-1/2 -translate-y-1/2 text-dark/30 text-lg pointer-events-none">search</span>
+              <div id="approveModalNameDropdown" class="hidden absolute z-30 mt-1 w-full max-h-48 overflow-y-auto bg-white border border-light rounded-lg shadow-lg"></div>
+            </div>
+          </div>
+          <div class="flex gap-2">
+            <button id="approveModalCancelBtn" type="button"
+              class="flex-1 py-2.5 rounded-lg border border-light text-dark/60 text-sm font-bold hover:bg-light/30 transition">キャンセル</button>
+            <button id="approveModalConfirmBtn" type="button"
+              class="flex-1 py-2.5 rounded-lg bg-cta text-white text-sm font-bold hover:brightness-105 transition">承認する</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 期待値調整（希望日時が少ない場合の同意）モーダル -->
+  <div id="expectationModal" class="hidden fixed inset-0 z-50">
+    <div id="expectationModalBackdrop" class="absolute inset-0 bg-dark/60"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="relative bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
+        <div class="px-5 py-4 bg-cta text-white">
+          <p class="font-bold text-sm flex items-center gap-2"><span class="material-icons-round text-base">info</span>ご確認ください</p>
+        </div>
+        <div class="p-5 space-y-4 text-sm text-dark/80 leading-relaxed">
+          <p>ご提示いただいた日程ですと、日程調整に時間を要してしまうことがございます。また、担当コーチとの日程調整が難しい場合は、運営コーチが代行して面談を実施させていただくことがございます。あらかじめご了承くださいませ。</p>
+          <div class="flex gap-2">
+            <button id="expectationCancelBtn" type="button"
+              class="flex-1 py-2.5 rounded-lg border border-light text-dark/60 text-sm font-bold hover:bg-light/30 transition">候補を修正する</button>
+            <button id="expectationAgreeBtn" type="button"
+              class="flex-1 py-2.5 rounded-lg bg-cta text-white text-sm font-bold hover:brightness-105 transition">同意して提出する</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 管理画面パスワードゲート -->
+  <div id="adminPasswordScreen" class="hidden fixed inset-0 z-40 bg-[#EEF3F5] flex flex-col items-center justify-center px-6 gap-4">
+    <span class="material-icons-round text-4xl text-main">lock</span>
+    <p class="font-bold text-dark">管理画面パスワード</p>
+    <div class="w-full max-w-xs space-y-3">
+      <input id="adminPasswordInput" type="password" placeholder="パスワードを入力"
+        class="w-full rounded-lg border border-light p-3 text-sm text-center focus:ring-2 focus:ring-sub focus:border-sub transition" />
+      <button id="adminPasswordSubmitBtn" type="button"
+        class="w-full py-3 rounded-lg bg-main text-white font-bold shadow hover:bg-sub transition">入室する</button>
+      <p id="adminPasswordError" class="hidden text-xs text-cta font-bold text-center">パスワードが正しくありません。</p>
+    </div>
+  </div>
+
+  <!-- 進行中の調整：ステータス詳細モーダル -->
+  <div id="progressDetailModal" class="hidden fixed inset-0 z-50">
+    <div id="progressDetailBackdrop" class="absolute inset-0 bg-dark/60"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="relative bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden">
+        <div class="px-5 py-4 bg-dark text-white flex items-center justify-between">
+          <p class="font-bold text-sm flex items-center gap-2"><span class="material-icons-round text-base">schedule</span>ステータス詳細</p>
+          <button id="closeProgressDetailBtn" class="w-8 h-8 rounded-full hover:bg-white/10 flex items-center justify-center transition">
+            <span class="material-icons-round">close</span>
+          </button>
+        </div>
+        <div id="progressDetailContent" class="p-5 space-y-2 text-sm"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 案件ごとのリンク一覧（生徒用/コーチ用/確認用リンクをコピーできる） -->
+  <div id="linksModal" class="hidden fixed inset-0 z-50">
+    <div id="linksModalBackdrop" class="absolute inset-0 bg-dark/60"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="relative bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden max-h-[85vh] flex flex-col">
+        <div class="px-5 py-4 bg-dark text-white flex items-center justify-between shrink-0">
+          <p class="font-bold text-sm flex items-center gap-2"><span class="material-icons-round text-base">link</span>リンク一覧</p>
+          <button id="closeLinksModalBtn" class="w-8 h-8 rounded-full hover:bg-white/10 flex items-center justify-center transition">
+            <span class="material-icons-round">close</span>
+          </button>
+        </div>
+        <div id="linksModalContent" class="p-5 space-y-3 text-xs overflow-y-auto"></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+// ========================= APIクライアント =========================
+// GASウェブアプリを純粋なJSON APIとして呼び出す。
+// GET: クロスオリジンでも追加設定なしで動作。
+// POST: preflight(OPTIONS)を避けるため text/plain で送信し、GAS側でJSONとしてパースする。
+const GAS_API_URL = (window.APP_CONFIG && window.APP_CONFIG.GAS_API_URL) || '';
+
+function apiGet(action, params) {
+  const url = new URL(GAS_API_URL);
+  url.searchParams.set('action', action);
+  Object.entries(params || {}).forEach(([k, v]) => { if (v !== undefined && v !== null) url.searchParams.set(k, v); });
+  return fetch(url.toString())
+    .then(r => r.json())
+    .then(res => { if (!res.success) throw new Error(res.error || 'APIエラー'); return res.data; });
+}
+
+function apiPost(action, payload) {
+  return fetch(GAS_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ action, ...payload }),
+  })
+    .then(r => r.json())
+    .then(res => { if (!res.success) throw new Error(res.error || 'APIエラー'); return res.data; });
+}
+
+// ========================= 画面ルーティング =========================
+const $ = (id) => document.getElementById(id);
+const narrowScreens = ['loading','error','student-form','student-thanks','coach-form','coach-thanks','confirm'];
+
+// Tailwindの `hidden` クラス(display:none)は、adminWrapのように `md:flex` など
+// レスポンシブな表示クラスを併用している要素だと、画面幅によっては上書きされてしまう
+// （例: PC幅では `md:flex` が `hidden` より後にCSSへ展開されるため、非表示のはずが表示されてしまうバグ）。
+// これを避けるため、表示/非表示は常に style.display をJSから直接・明示的な値で操作して確定させる。
+function setBlockVisible(id, visible, visibleDisplay){
+  $(id).style.display = visible ? (visibleDisplay || 'block') : 'none';
+}
+
+function show(name){
+  if (name === 'admin') {
+    setBlockVisible('narrowWrap', false);
+    setBlockVisible('adminWrap', true, 'flex'); // 明示的に'flex'を指定し、md:flexとの優先順位競合を回避
+    $('pageFooter').classList.add('hidden');
+    return;
+  }
+  setBlockVisible('adminWrap', false);
+  setBlockVisible('narrowWrap', true, 'flex');
+  $('pageFooter').classList.remove('hidden');
+  narrowScreens.forEach(s => $('screen-' + s).classList.toggle('hidden', s !== name));
+}
+function showError(title, msg){
+  $('errorTitle').textContent = title || 'リンクが無効です';
+  $('errorMsg').textContent = msg || 'URLをご確認のうえ、再度お試しください。';
+  show('error');
+}
+const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土'];
+
+// ========================= カレンダーUI 共通ヘルパー =========================
+// バックエンド CONFIG と揃える。変更する場合は コード.gs 側も合わせて修正すること。
+const CAL_START_HOUR = 10;
+const CAL_END_HOUR = 22;
+const CAL_SLOT_MIN = 30;
+
+function calMinutesToHHMM(total){
+  const h = Math.floor(total / 60), m = total % 60;
+  return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+}
+function calDateToISO(d){
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function calGetTimeSlots(){
+  const slots = [];
+  const totalMin = (CAL_END_HOUR - CAL_START_HOUR) * 60;
+  for (let m = 0; m < totalMin; m += CAL_SLOT_MIN) {
+    const startMin = CAL_START_HOUR * 60 + m;
+    slots.push({ start: calMinutesToHHMM(startMin), end: calMinutesToHHMM(startMin + CAL_SLOT_MIN) });
+  }
+  return slots;
+}
+// 対象週があればその週の月〜土（日曜始まりの場合は月曜にずらす）、無ければ今日から2週間分を返す
+function calGetDays(targetWeekIso){
+  const days = [];
+  if (targetWeekIso) {
+    const m = String(targetWeekIso).match(/^(\d{4}-\d{2}-\d{2})/);
+    let start = new Date((m ? m[1] : targetWeekIso) + 'T00:00:00');
+    if (!isNaN(start.getTime())) {
+      if (start.getDay() === 0) start = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+      for (let i = 0; i < 6; i++) days.push(new Date(start.getTime() + i * 24 * 60 * 60 * 1000));
+      return days;
+    }
+  }
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  for (let i = 0; i < 14; i++) days.push(new Date(today.getTime() + i * 24 * 60 * 60 * 1000));
+  return days;
+}
+
+// カレンダーのグリッドDOMを構築する。cellClass指定で用途別に見た目を変えられる。
+function calRenderGrid(container, days, slots){
+  container.innerHTML = '';
+  container.classList.add('cal-grid');
+  container.style.gridTemplateColumns = '52px repeat(' + days.length + ', minmax(58px, 1fr))';
+
+  const corner = document.createElement('div');
+  corner.className = 'cal-corner';
+  container.appendChild(corner);
+
+  days.forEach((d) => {
+    const h = document.createElement('div');
+    h.className = 'cal-dayhead';
+    h.textContent = (d.getMonth() + 1) + '/' + d.getDate() + '(' + DAY_LABELS[d.getDay()] + ')';
+    container.appendChild(h);
+  });
+
+  slots.forEach((slot) => {
+    const label = document.createElement('div');
+    label.className = 'cal-timelabel';
+    label.textContent = slot.start.endsWith(':00') ? slot.start : '';
+    container.appendChild(label);
+
+    days.forEach((d) => {
+      const dateIso = calDateToISO(d);
+      const cell = document.createElement('div');
+      cell.className = 'cal-cell';
+      cell.dataset.key = dateIso + '_' + slot.start;
+      cell.dataset.date = dateIso;
+      cell.dataset.start = slot.start;
+      cell.dataset.end = slot.end;
+      container.appendChild(cell);
+    });
+  });
+}
+
+// ドラッグ/タップで選択トグルできる編集可能カレンダーにする（生徒用）。
+function calMakeEditable(container, selectedSet, onChange){
+  let dragging = false;
+  let dragMode = true;
+  function applyCell(cell, mode){
+    const key = cell.dataset.key;
+    if (mode) { selectedSet.add(key); cell.classList.add('is-selected'); }
+    else { selectedSet.delete(key); cell.classList.remove('is-selected'); }
+  }
+  container.addEventListener('pointerdown', (e) => {
+    const cell = e.target.closest('.cal-cell');
+    if (!cell) return;
+    dragging = true;
+    dragMode = !selectedSet.has(cell.dataset.key);
+    applyCell(cell, dragMode);
+    onChange();
+    e.preventDefault();
+  });
+  container.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const cell = el && el.closest && el.closest('.cal-cell');
+    if (!cell || !container.contains(cell)) return;
+    applyCell(cell, dragMode);
+    onChange();
+  });
+  window.addEventListener('pointerup', () => { dragging = false; });
+}
+
+// 日付ヘッダーをタップ（クリック）すると、ドラッグせずにその日を丸ごと選択/解除できるようにする。
+// （生徒画面向け。「終日」ボタンの代わりに、ヘッダー自体をタップ可能にしている）
+function calMakeDayHeadersToggleable(container, days, slots, selectedSet, onChange){
+  const headers = container.querySelectorAll('.cal-dayhead');
+  headers.forEach((h, idx) => {
+    h.classList.add('cal-dayhead-toggleable');
+    h.title = 'タップでこの日を終日選択/解除';
+    h.addEventListener('click', () => {
+      const dateIso = calDateToISO(days[idx]);
+      // 他の調整ですでにブロックされているセルは、終日選択の対象から除外する
+      const availableKeys = slots
+        .map((slot) => dateIso + '_' + slot.start)
+        .filter((k) => {
+          const cell = container.querySelector('.cal-cell[data-key="' + k + '"]');
+          return cell && !cell.classList.contains('is-occupied-oneoff') && !cell.classList.contains('is-occupied-recurring');
+        });
+      if (availableKeys.length === 0) return;
+      const allSelected = availableKeys.every((k) => selectedSet.has(k));
+      availableKeys.forEach((k) => {
+        if (allSelected) selectedSet.delete(k); else selectedSet.add(k);
+        const cell = container.querySelector('.cal-cell[data-key="' + k + '"]');
+        if (cell) cell.classList.toggle('is-selected', !allSelected);
+      });
+      h.classList.toggle('is-day-all', !allSelected);
+      onChange();
+    });
+  });
+}
+
+// 同じ生徒の別の調整ですでに確保されている時間帯を、実際のカレンダーセルに反映する。
+// 単発（1週目のみ等）は is-occupied-oneoff、固定（毎週）は is-occupied-recurring を付与し、
+// CSS側で pointer-events:none にしているため、選択・クリック操作は自動的にできなくなる。
+function calApplyOccupiedBlocks(container, days, slots, occupiedBlocks){
+  if (!occupiedBlocks || occupiedBlocks.length === 0) return;
+  days.forEach((d) => {
+    const dateIso = calDateToISO(d);
+    const dow = DAY_LABELS[d.getDay()];
+    slots.forEach((slot) => {
+      const hasRecurring = occupiedBlocks.some((b) => b.recurring && b.weekday === dow && slot.start < b.end && b.start < slot.end);
+      const hasOneoff = !hasRecurring && occupiedBlocks.some((b) => !b.recurring && b.date === dateIso && slot.start < b.end && b.start < slot.end);
+      if (!hasRecurring && !hasOneoff) return;
+      const cell = container.querySelector('.cal-cell[data-key="' + dateIso + '_' + slot.start + '"]');
+      if (cell) cell.classList.add(hasRecurring ? 'is-occupied-recurring' : 'is-occupied-oneoff');
+    });
+  });
+}
+
+// カレンダーのグリッドは、ドラッグ選択とネイティブのタッチスクロールが競合しないよう
+// touch-action:none にしているため、スマホでは指でスクロールできない。
+// その代わりに、上下のボタンで一定量ずつスクロールできるようにする。
+function calWireScrollButtons(scrollWrapId, upBtnId, downBtnId){
+  const wrap = document.getElementById(scrollWrapId);
+  const upBtn = document.getElementById(upBtnId);
+  const downBtn = document.getElementById(downBtnId);
+  if (!wrap || !upBtn || !downBtn) return;
+  const SCROLL_STEP = 132; // 約6コマ分（1コマ22px換算）
+  upBtn.onclick = () => wrap.scrollBy({ top: -SCROLL_STEP, behavior: 'smooth' });
+  downBtn.onclick = () => wrap.scrollBy({ top: SCROLL_STEP, behavior: 'smooth' });
+}
+
+// 選択セル集合から、日ごとの連続ブロックを "YYYY-MM-DD HH:MM〜HH:MM" 文字列の配列に変換する。
+function calSerializeSelection(selectedSet, days, slots){
+  const results = [];
+  days.forEach((d) => {
+    const dateIso = calDateToISO(d);
+    let runStart = null, runEnd = null;
+    slots.forEach((slot) => {
+      const key = dateIso + '_' + slot.start;
+      if (selectedSet.has(key)) {
+        if (runStart === null) runStart = slot.start;
+        runEnd = slot.end;
+      } else if (runStart !== null) {
+        results.push(dateIso + ' ' + runStart + '〜' + runEnd);
+        runStart = null; runEnd = null;
+      }
+    });
+    if (runStart !== null) results.push(dateIso + ' ' + runStart + '〜' + runEnd);
+  });
+  return results;
+}
+
+// 選択セル集合から「選択している異なる日数」と「合計時間(h)」を計算する。
+function calComputeStats(selectedSet){
+  const dateSet = new Set();
+  selectedSet.forEach((key) => dateSet.add(key.split('_')[0]));
+  return { distinctDays: dateSet.size, totalHours: selectedSet.size * (CAL_SLOT_MIN / 60) };
+}
+
+// 生徒の希望時間帯文字列群を、カレンダー上のハイライト用セルキー集合に変換する。
+function calHighlightKeysFromSlots(slotStrings){
+  const keys = new Set();
+  const slotDefs = calGetTimeSlots();
+  (slotStrings || []).forEach((s) => {
+    const win = parseSlotWindow(s);
+    if (!win) return;
+    slotDefs.forEach((slot) => {
+      if (slot.start >= win.winStart && slot.start < win.winEnd) {
+        keys.add(win.date + '_' + slot.start);
+      }
+    });
+  });
+  return keys;
+}
+
+// 候補の希望時間帯 "YYYY-MM-DD HH:MM〜HH:MM" を、曜日付きの読みやすい表記に変換する。
+// 例: "2026-07-15 15:00〜18:00" → "2026/7/15（水） 15:00〜18:00"
+function fmtSlot(s){
+  const win = parseSlotWindow(s);
+  if (!win) return s;
+  const d = new Date(win.date + 'T00:00:00');
+  if (isNaN(d.getTime())) return s;
+  const dateLabel = d.getFullYear() + '/' + (d.getMonth() + 1) + '/' + d.getDate() + '（' + DAY_LABELS[d.getDay()] + '）';
+  return dateLabel + ' ' + win.winStart + '〜' + win.winEnd;
+}
+
+// 対象週の開始日（'YYYY-MM-DD' 想定、月曜日を想定）から、
+// その週の月曜日〜土曜日を "YYYY/M/D(曜)〜M/D(曜)" 形式に変換する。
+// サーバー側で正規化されずに "2026-07-04T15:00:00.000Z" のような日時文字列が来た場合に備え、
+// 念のため日付部分だけを抜き出してから処理する（保険的な二重対策）。
+function formatTargetWeek(isoDate){
+  if (!isoDate) return '';
+  const m = String(isoDate).match(/^(\d{4}-\d{2}-\d{2})/);
+  const dateOnly = m ? m[1] : isoDate;
+  const start = new Date(dateOnly + 'T00:00:00');
+  if (isNaN(start.getTime())) return isoDate;
+  const end = new Date(start.getTime() + 5 * 24 * 60 * 60 * 1000); // 月曜+5日=土曜
+  const fmtFull = (d) => d.getFullYear() + '/' + (d.getMonth() + 1) + '/' + d.getDate() + '(' + DAY_LABELS[d.getDay()] + ')';
+  const fmtShort = (d) => (d.getMonth() + 1) + '/' + d.getDate() + '(' + DAY_LABELS[d.getDay()] + ')';
+  return fmtFull(start) + '〜' + fmtShort(end);
+}
+
+// 生徒画面にだけ使う表示用フォーマット。外部シートの「通常開始週」が日曜日で入っていることがあり、
+// 日曜日は休みのため、生徒への案内では開始日が日曜日なら1日ずらして月曜日として表示する
+// （管理画面側の表示・アラート判定などには影響させず、生徒向けの見た目だけを調整する）。
+function formatTargetWeekForStudent(isoDate){
+  if (!isoDate) return '';
+  const m = String(isoDate).match(/^(\d{4}-\d{2}-\d{2})/);
+  const dateOnly = m ? m[1] : isoDate;
+  let start = new Date(dateOnly + 'T00:00:00');
+  if (isNaN(start.getTime())) return isoDate;
+  if (start.getDay() === 0) { // 日曜日なら1日ずらして月曜日にする
+    start = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+  }
+  const end = new Date(start.getTime() + 5 * 24 * 60 * 60 * 1000);
+  const fmtFull = (d) => d.getFullYear() + '/' + (d.getMonth() + 1) + '/' + d.getDate() + '(' + DAY_LABELS[d.getDay()] + ')';
+  const fmtShort = (d) => (d.getMonth() + 1) + '/' + d.getDate() + '(' + DAY_LABELS[d.getDay()] + ')';
+  return fmtFull(start) + '〜' + fmtShort(end);
+}
+
+// ========================= トースト通知 =========================
+let toastTimer = null;
+function showToast(message, isError){
+  const toast = $('toast');
+  toast.textContent = message;
+  toast.style.backgroundColor = isError ? '#dc2626' : '#207B97';
+  toast.classList.add('toast-show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove('toast-show'), 2200);
+}
+
+// ========================= ロール状態 & 管理者専用ボタンの表示制御 =========================
+// 現在表示中のロール（'admin' | 'student' | 'coach' | 'confirm'）を各init関数がセットする。
+// マニュアルモーダルへのパラメータ受け渡しと、管理者専用ボタン（CRM・初回FIXリスト）の
+// 表示/非表示の両方に使う。
+let currentRole = 'admin';
+
+// CRM/初回FIXリストの各ボタンは管理者向け（role=admin、またはパラメータなし/不正で
+// エラー画面が出ている状態＝currentRoleが初期値'admin'のまま）の時だけ表示し、
+// 生徒・コーチ・確認完了画面では確実に非表示にする。
+// Tailwindの `hidden` クラスとレスポンシブな `sm:flex` 等を併用すると、画面幅によっては
+// hidden側が負けて意図せず表示されてしまうことがあるため、style.displayを直接・明示的に
+// 操作して確定させる（adminWrap側の表示制御と同じ考え方）。
+function updateAdminOnlyButtonsVisibility(){
+  const isAdmin = currentRole === 'admin';
+  const visibleDisplay = window.matchMedia('(min-width: 640px)').matches ? 'flex' : 'none';
+  ['crmLink', 'fixListBtn'].forEach((id) => {
+    $(id).style.display = isAdmin ? visibleDisplay : 'none';
+  });
+}
+window.addEventListener('resize', updateAdminOnlyButtonsVisibility);
+updateAdminOnlyButtonsVisibility(); // 初期表示（デフォルトは管理者扱い）
+
+function setCurrentRole(role){
+  currentRole = role;
+  updateAdminOnlyButtonsVisibility();
+}
+
+// CRMへ記録するボタン：タップ時に確認ダイアログを出し、OKの場合のみ別タブでCRMを開く。
+$('crmLink').addEventListener('click', (e) => {
+  if (!confirm('CRMへ移動しますか？（別タブで開きます）')) {
+    e.preventDefault();
+  }
+});
+
+// ========================= 使い方マニュアル モーダル =========================
+function openManual(){
+  $('manualFrame').src = './manual.html?role=' + encodeURIComponent(currentRole);
+  $('manualModal').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+function closeManual(){
+  $('manualModal').classList.add('hidden');
+  $('manualFrame').src = '';
+  document.body.style.overflow = '';
+}
+$('openManualBtn').onclick = openManual;
+$('closeManualBtn').onclick = closeManual;
+$('manualBackdrop').onclick = closeManual;
+
+// ========================= 初回FIXリスト モーダル =========================
+function openFixList(){
+  $('fixListModal').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+  $('fixListContent').innerHTML = '<p class="text-xs text-dark/40 py-6 text-center">読み込み中…</p>';
+  apiGet('getUnassignedExternalRows')
+    .then((rows) => renderFixList(rows))
+    .catch((err) => {
+      $('fixListContent').innerHTML = '<p class="text-xs text-cta font-bold py-6 text-center">読み込みに失敗しました: ' + err.message + '</p>';
+    });
+}
+function closeFixList(){
+  $('fixListModal').classList.add('hidden');
+  document.body.style.overflow = '';
+}
+function renderFixList(rows){
+  const box = $('fixListContent');
+  if (!rows || rows.length === 0) {
+    box.innerHTML = '<p class="text-xs text-dark/40 py-6 text-center">未調整（調整ID未発行）の行はありません。</p>';
+    return;
+  }
+  box.innerHTML = '';
+  rows.forEach((r) => {
+    const card = document.createElement('div');
+    card.className = 'bg-white border border-light rounded-lg p-3';
+    card.innerHTML =
+      '<div class="flex items-center justify-between gap-2">' +
+      '<p class="font-bold text-sm">' + (r.startWeek ? formatTargetWeek(r.startWeek) : '（開始週未設定）') + '</p>' +
+      '<p class="text-dark/50 text-xs shrink-0">' + r.studentName + '（' + r.studentCode + '）</p>' +
+      '</div>' +
+      '<p class="text-dark/70 text-xs mt-1">' + (r.course || '—') + '</p>' +
+      '<p class="text-dark/50 text-xs">' + [r.subject, r.content].filter(Boolean).join(' / ') + '</p>' +
+      '<p class="text-main text-xs mt-0.5">候補: ' + (r.candidateCoach || '—') + '</p>';
+    box.appendChild(card);
+  });
+}
+$('fixListBtn').onclick = openFixList;
+$('closeFixListBtn').onclick = closeFixList;
+$('fixListBackdrop').onclick = closeFixList;
+
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  closeManual();
+  closeFixList();
+  closeApproveModal();
+  closeProgressDetail();
+  closeCreateConfirmModal();
+  $('expectationModal').classList.add('hidden');
+});
+
+// ========================= クリップボードコピー =========================
+function copyToClipboard(text){
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    return navigator.clipboard.writeText(text);
+  }
+  return new Promise((resolve, reject) => {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      resolve();
+    } catch (err) { reject(err); }
+  });
+}
+
+function setupCopyButton(btnId, getText){
+  const btn = $(btnId);
+  const labelEl = btn.querySelector('.btnLabel');
+  btn.onclick = () => {
+    copyToClipboard(getText())
+      .then(() => {
+        labelEl.textContent = 'コピーしました！';
+        showToast('リンクをクリップボードにコピーしました');
+        setTimeout(() => { labelEl.textContent = btn.dataset.defaultLabel; }, 2000);
+      })
+      .catch(() => showToast('コピーに失敗しました。手動で選択してコピーしてください。', true));
+  };
+}
+
+// ========================= 起動ルーティング =========================
+// セキュリティ上、role=admin が明示的に付与されている場合のみ管理画面を表示する。
+// パラメータなし・不正なパラメータでのアクセスは、すべてエラー画面にフォールバックする。
+document.addEventListener('DOMContentLoaded', () => {
+  if (!GAS_API_URL || GAS_API_URL.indexOf('xxxxx') !== -1) {
+    return showError('APIが未設定です', 'config.js の GAS_API_URL にデプロイ済みGASのURLを設定してください。');
+  }
+  const q = new URLSearchParams(window.location.search);
+  const role = q.get('role');
+  const cid = q.get('cid');
+  const target = q.get('target');
+  const coachToken = q.get('ct');
+
+  if (role === 'student' && cid) initStudent(cid);
+  else if (role === 'coach' && cid) initCoach(cid, coachToken);
+  else if (role === 'confirm' && cid) initConfirm(cid, target);
+  else if (role === 'admin') initAdminGate();
+  else showError('画面を表示できません', '正しいリンクからアクセスしてください。');
+});
+
+// ========================= 管理画面パスワードゲート =========================
+// タブを閉じるまで有効（sessionStorage）。認証済みならそのまま管理画面へ進む。
+const ADMIN_AUTH_KEY = 'gcAdminAuthed';
+
+function initAdminGate(){
+  if (sessionStorage.getItem(ADMIN_AUTH_KEY) === 'true') {
+    initAdmin();
+    return;
+  }
+  $('adminPasswordScreen').classList.remove('hidden');
+  setTimeout(() => $('adminPasswordInput').focus(), 50);
+  $('adminPasswordSubmitBtn').onclick = submitAdminPassword;
+  $('adminPasswordInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') submitAdminPassword(); });
+}
+
+function submitAdminPassword(){
+  const password = $('adminPasswordInput').value;
+  $('adminPasswordError').classList.add('hidden');
+  const btn = $('adminPasswordSubmitBtn');
+  btn.disabled = true;
+  btn.textContent = '確認中…';
+  apiPost('verifyAdminPassword', { password })
+    .then(() => {
+      sessionStorage.setItem(ADMIN_AUTH_KEY, 'true');
+      $('adminPasswordScreen').classList.add('hidden');
+      btn.disabled = false;
+      btn.textContent = '入室する';
+      initAdmin();
+    })
+    .catch(() => {
+      btn.disabled = false;
+      btn.textContent = '入室する';
+      $('adminPasswordError').classList.remove('hidden');
+      $('adminPasswordInput').value = '';
+      $('adminPasswordInput').focus();
+    });
+}
+
+// ========================= 生徒フロー =========================
+let studentSelectedSet = new Set();
+let studentCalDays = [];
+let studentCalSlots = [];
+let pendingStudentSubmission = null;
+
+function updateStudentSelectionSummary(){
+  const stats = calComputeStats(studentSelectedSet);
+  $('stuSelectionSummary').textContent = '曜日: ' + stats.distinctDays + '/3　合計: ' + stats.totalHours.toFixed(1) + 'h/10h';
+  const meetsRequirement = stats.distinctDays >= 3 && stats.totalHours >= 10;
+  $('submitStudentBtn').disabled = !meetsRequirement;
+  $('stuRequirementHint').classList.toggle('hidden', meetsRequirement);
+}
+
+function initStudent(cid){
+  setCurrentRole('student');
+  show('loading');
+  apiGet('getAssignmentForStudent', { cid })
+    .then((data) => {
+      if (data.error) return showError('リンクが無効です', data.error);
+      if (data.status === '対応不要') {
+        return showError('この面談は対応不要となりました', '運営により、この面談調整は対応不要として処理されました。ご不明な点があれば運営までお問い合わせください。');
+      }
+      if (data.status !== '生徒回答待ち') {
+        return showError('この面談はすでに回答済みです', 'ステータス: ' + data.status);
+      }
+      $('headerTitle').textContent = '生徒用フォーム';
+      $('stuTypeLabel').textContent = '【' + data.interviewType + '】日程調整';
+      $('stuStudentName').textContent = data.studentName;
+      $('stuCoachName').textContent = data.coachName;
+      $('stuEmail').value = data.prefillEmail || '';
+      if (data.targetWeek) {
+        $('stuTargetWeek').textContent = formatTargetWeekForStudent(data.targetWeek);
+        $('stuTargetWeekBox').classList.remove('hidden');
+      } else {
+        $('stuTargetWeekBox').classList.add('hidden');
+      }
+
+      studentSelectedSet = new Set();
+      studentCalDays = calGetDays(data.targetWeek);
+      studentCalSlots = calGetTimeSlots();
+      calRenderGrid($('stuCalendarGrid'), studentCalDays, studentCalSlots);
+      calApplyOccupiedBlocks($('stuCalendarGrid'), studentCalDays, studentCalSlots, data.occupiedSlots);
+      $('stuOccupiedLegend').classList.toggle('hidden', !(data.occupiedSlots && data.occupiedSlots.length > 0));
+      calMakeEditable($('stuCalendarGrid'), studentSelectedSet, updateStudentSelectionSummary);
+      calMakeDayHeadersToggleable($('stuCalendarGrid'), studentCalDays, studentCalSlots, studentSelectedSet, updateStudentSelectionSummary);
+      calWireScrollButtons('stuCalendarScrollWrap', 'stuCalScrollUpBtn', 'stuCalScrollDownBtn');
+      updateStudentSelectionSummary();
+
+      show('student-form');
+    })
+    .catch((err) => showError('読み込みに失敗しました', err.message));
+
+  $('submitStudentBtn').onclick = () => {
+    // ボタンは条件未達の間disabledになっているため通常ここには来ないが、
+    // 念のための二重チェック（disabled属性が何らかの理由で外れていた場合の保険）。
+    const stats = calComputeStats(studentSelectedSet);
+    if (stats.distinctDays < 3 || stats.totalHours < 10) {
+      return alert('3日以上・合計10時間以上を選択してから送信してください（現在: ' + stats.distinctDays + '日 / ' + stats.totalHours.toFixed(1) + '時間）。');
+    }
+
+    const slots = calSerializeSelection(studentSelectedSet, studentCalDays, studentCalSlots);
+    const email = $('stuEmail').value.trim();
+    const remarks = $('stuRemarks').value.trim();
+    if (slots.length === 0) return alert('カレンダーから希望時間帯を1つ以上選択してください。');
+    if (!email) return alert('メールアドレスを入力してください。');
+
+    doSubmitStudent(cid, slots, email, remarks, false);
+  };
+}
+
+function doSubmitStudent(cid, slots, email, remarks, agreedToWarning){
+  $('submitStudentBtn').disabled = true;
+  $('submitStudentBtn').textContent = '送信中…';
+  apiPost('submitStudentPreferences', { cid, slots, email, remarks, agreedToWarning })
+    .then(() => { buildFlowSteps(1); show('student-thanks'); })
+    .catch((err) => {
+      $('submitStudentBtn').disabled = false;
+      $('submitStudentBtn').textContent = 'この内容で送信する';
+      alert('送信に失敗しました: ' + err.message);
+    });
+}
+
+$('expectationCancelBtn').onclick = () => {
+  $('expectationModal').classList.add('hidden');
+  pendingStudentSubmission = null;
+};
+$('expectationModalBackdrop').onclick = () => {
+  $('expectationModal').classList.add('hidden');
+  pendingStudentSubmission = null;
+};
+$('expectationAgreeBtn').onclick = () => {
+  if (!pendingStudentSubmission) return;
+  const { cid, slots, email, remarks } = pendingStudentSubmission;
+  $('expectationModal').classList.add('hidden');
+  doSubmitStudent(cid, slots, email, remarks, true);
+  pendingStudentSubmission = null;
+};
+
+function buildFlowSteps(activeIndex){
+  const steps = [
+    { icon: 'hourglass_top', label: '承認待ち' },
+    { icon: 'mail', label: '確定連絡' },
+    { icon: 'check_circle', label: '確認完了' },
+  ];
+  const wrap = $('flowSteps');
+  wrap.innerHTML = '';
+  steps.forEach((s, i) => {
+    const active = i <= activeIndex;
+    const col = document.createElement('div');
+    col.className = 'flex-1 flex flex-col items-center gap-1 relative';
+    col.innerHTML =
+      (i > 0 ? '<div class="absolute top-4 right-1/2 w-full h-0.5 ' + (i <= activeIndex ? 'bg-main' : 'bg-light') + '"></div>' : '') +
+      '<div class="w-9 h-9 rounded-full flex items-center justify-center z-10 ' + (active ? 'bg-main text-white' : 'bg-light text-dark/40') + '">' +
+      '<span class="material-icons-round text-base">' + s.icon + '</span></div>' +
+      '<p class="text-[11px] font-bold ' + (active ? 'text-dark' : 'text-dark/30') + '">' + (i+1) + '. ' + s.label + '</p>';
+    wrap.appendChild(col);
+  });
+}
+
+// ========================= コーチフロー =========================
+// 生徒の希望文字列 "YYYY-MM-DD HH:MM〜HH:MM" を分解する（フォールバック用に維持）
+function parseSlotWindow(slot){
+  const m = String(slot).match(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})〜(\d{2}:\d{2})$/);
+  if (!m) return null;
+  return { date: m[1], winStart: m[2], winEnd: m[3] };
+}
+
+let coachHighlightSet = new Set();
+let coachCalDaysG = [];
+let coachCalSlotsG = [];
+let coachPickMode = 'fixed'; // 'fixed' | 'week1'
+let coachFixedPick = null;   // {date, start, end}
+let coachWeek1Pick = null;
+let coachIsFixedType = false;
+
+function coachFindCellByDateStart(date, start){
+  return document.querySelector('#coachCalendarGrid .cal-cell[data-date="' + date + '"][data-start="' + start + '"]');
+}
+
+// クリックしたセルを起点に、1時間分（連続する2コマ）が生徒の希望範囲内に収まっているか確認する。
+function coachTry1HourPick(cell){
+  if (!cell.classList.contains('is-highlighted')) {
+    showToast('生徒の希望時間帯（水色）の中から選択してください', true);
+    return null;
+  }
+  const date = cell.dataset.date, start = cell.dataset.start, midEnd = cell.dataset.end;
+  const nextCell = coachFindCellByDateStart(date, midEnd);
+  if (!nextCell || !nextCell.classList.contains('is-highlighted')) {
+    showToast('その時刻からは1時間分の枠が確保できません。範囲内の別の時刻を選択してください', true);
+    return null;
+  }
+  if (nextCell.classList.contains('is-occupied-oneoff') || nextCell.classList.contains('is-occupied-recurring')) {
+    showToast('その時刻からの1時間は、この生徒の別の日程調整とすでに重複しています', true);
+    return null;
+  }
+  return { date, start, end: nextCell.dataset.end, cells: [cell, nextCell] };
+}
+
+function updateCoachPickedLabel(){
+  const el = $('coachPickedLabel');
+  if (!coachFixedPick) { el.classList.add('hidden'); return; }
+  el.classList.remove('hidden');
+  const label = coachIsFixedType ? '固定で選択中: ' : '選択中: ';
+  el.textContent = label + fmtSlot(coachFixedPick.date + ' ' + coachFixedPick.start + '〜' + coachFixedPick.end);
+}
+function updateCoachWeek1PickedLabel(){
+  const el = $('coachWeek1PickedLabel');
+  if (!coachWeek1Pick) { el.classList.add('hidden'); return; }
+  el.classList.remove('hidden');
+  el.textContent = '1週目で選択中: ' + fmtSlot(coachWeek1Pick.date + ' ' + coachWeek1Pick.start + '〜' + coachWeek1Pick.end);
+}
+
+function attachCoachCalendarClicks(container){
+  container.addEventListener('click', (e) => {
+    const cell = e.target.closest('.cal-cell');
+    if (!cell) return;
+    const picked = coachTry1HourPick(cell);
+    if (!picked) return;
+
+    if (coachPickMode === 'week1') {
+      container.querySelectorAll('.is-week1-picked').forEach(c => c.classList.remove('is-week1-picked'));
+      picked.cells.forEach(c => c.classList.add('is-week1-picked'));
+      coachWeek1Pick = picked;
+      updateCoachWeek1PickedLabel();
+    } else {
+      container.querySelectorAll('.is-fixed-picked').forEach(c => c.classList.remove('is-fixed-picked'));
+      picked.cells.forEach(c => c.classList.add('is-fixed-picked'));
+      coachFixedPick = picked;
+      updateCoachPickedLabel();
+      // 固定が確定した時点で初めて「1週目も同じか」の確認UIを表示する（誤操作防止）
+      if (coachIsFixedType) {
+        $('coachWeek1Placeholder').classList.add('hidden');
+        $('coachWeek1CheckboxRow').classList.remove('hidden');
+      }
+    }
+    $('coachNoneRadio').checked = false;
+    $('coachDeclineReasonBox').classList.add('hidden');
+  });
+}
+
+function initCoach(cid, coachToken){
+  setCurrentRole('coach');
+  show('loading');
+  apiGet('getAssignmentForCoach', { cid, token: coachToken })
+    .then((data) => {
+      if (data.error) return showError('リンクが無効です', data.error);
+      if (data.status === '回答期限切れ') {
+        return showError('期限切れのため回答権限がありません', '運営が次点のコーチを検討中です。お手数ですが運営までお問い合わせください。');
+      }
+      if (data.status === '対応不要') {
+        return showError('この面談は対応不要となりました', '運営により、この面談調整は対応不要として処理されました。この後の対応は不要です。');
+      }
+      if (data.status !== 'コーチ回答待ち') {
+        return showError('この面談はすでに対応済みです', 'ステータス: ' + data.status);
+      }
+
+      $('headerTitle').textContent = 'コーチ用フォーム';
+      $('coachTypeLabel').textContent = '【' + data.interviewType + '】日程調整';
+      $('coachStudentName').textContent = data.studentName;
+      $('coachEmail').value = data.prefillEmail || '';
+
+      if (data.studentGrade || data.studentSchool || data.studentCourse) {
+        $('coachStudentInfoBox').classList.remove('hidden');
+        $('coachStudentGrade').textContent = data.studentGrade || '—';
+        $('coachStudentSchool').textContent = data.studentSchool || '—';
+        $('coachStudentCourse').textContent = data.studentCourse || '—';
+        if (data.studentSubject) {
+          $('coachStudentSubjectRow').classList.remove('hidden');
+          $('coachStudentSubject').textContent = data.studentSubject;
+        } else {
+          $('coachStudentSubjectRow').classList.add('hidden');
+        }
+      } else {
+        $('coachStudentInfoBox').classList.add('hidden');
+      }
+
+      if (data.handoverNote) {
+        $('coachHandoverText').textContent = data.handoverNote;
+        $('coachHandoverBox').classList.remove('hidden');
+      } else {
+        $('coachHandoverBox').classList.add('hidden');
+      }
+
+      if (data.remarks) {
+        $('coachRemarksText').textContent = data.remarks;
+        $('coachRemarksBox').classList.remove('hidden');
+      } else {
+        $('coachRemarksBox').classList.add('hidden');
+      }
+
+      coachIsFixedType = !!data.isFixedType;
+      $('coachFixedNotice').classList.toggle('hidden', !coachIsFixedType);
+      $('coachFixedNotice').classList.toggle('flex', coachIsFixedType);
+      $('coachWeek1Section').classList.toggle('hidden', !coachIsFixedType);
+      $('coachCalendarLabel').textContent = coachIsFixedType ? '① まず固定の曜日・時間を選択' : '生徒の希望時間帯から選択';
+      $('coachWeek1SameCheckbox').checked = true;
+      $('coachWeek1PickerBox').classList.add('hidden');
+      // 固定を選ぶまでは「1週目も同じか」の確認自体を表示しない。
+      // （先に1週目側を触れてしまうと、固定の曜日を取り違えたまま登録されてしまう事故を防ぐため）
+      $('coachWeek1Placeholder').classList.remove('hidden');
+      $('coachWeek1CheckboxRow').classList.add('hidden');
+      coachPickMode = 'fixed';
+      coachFixedPick = null;
+      coachWeek1Pick = null;
+
+      coachCalDaysG = calGetDays(data.targetWeek);
+      coachCalSlotsG = calGetTimeSlots();
+      coachHighlightSet = calHighlightKeysFromSlots(data.slots || []);
+      calRenderGrid($('coachCalendarGrid'), coachCalDaysG, coachCalSlotsG);
+      $('coachCalendarGrid').classList.add('cal-readonly');
+      coachHighlightSet.forEach((key) => {
+        const cell = $('coachCalendarGrid').querySelector('.cal-cell[data-key="' + key + '"]');
+        if (cell) cell.classList.add('is-highlighted');
+      });
+      calApplyOccupiedBlocks($('coachCalendarGrid'), coachCalDaysG, coachCalSlotsG, data.occupiedSlots);
+      $('coachOccupiedLegend').classList.toggle('hidden', !(data.occupiedSlots && data.occupiedSlots.length > 0));
+      attachCoachCalendarClicks($('coachCalendarGrid'));
+      calWireScrollButtons('coachCalendarScrollWrap', 'coachCalScrollUpBtn', 'coachCalScrollDownBtn');
+      updateCoachPickedLabel();
+      updateCoachWeek1PickedLabel();
+
+      show('coach-form');
+    })
+    .catch((err) => showError('読み込みに失敗しました', err.message));
+
+  $('coachNoneRadio').onchange = () => {
+    const isNone = $('coachNoneRadio').checked;
+    $('coachDeclineReasonBox').classList.toggle('hidden', !isNone);
+    if (isNone) {
+      // 既にカレンダーで選択していた日程があれば解除する（全日程不可との矛盾を防ぐ）
+      document.querySelectorAll('#coachCalendarGrid .is-fixed-picked').forEach(c => c.classList.remove('is-fixed-picked'));
+      document.querySelectorAll('#coachCalendarGrid .is-week1-picked').forEach(c => c.classList.remove('is-week1-picked'));
+      coachFixedPick = null;
+      coachWeek1Pick = null;
+      updateCoachPickedLabel();
+      updateCoachWeek1PickedLabel();
+      if (coachIsFixedType) {
+        $('coachWeek1Placeholder').classList.remove('hidden');
+        $('coachWeek1CheckboxRow').classList.add('hidden');
+        $('coachWeek1PickerBox').classList.add('hidden');
+        $('coachWeek1SameCheckbox').checked = true;
+        coachPickMode = 'fixed';
+      }
+    }
+  };
+
+  $('coachWeek1SameCheckbox').onchange = (e) => {
+    if (e.target.checked) {
+      coachPickMode = 'fixed';
+      $('coachWeek1PickerBox').classList.add('hidden');
+      if (coachWeek1Pick) {
+        document.querySelectorAll('#coachCalendarGrid .is-week1-picked').forEach(c => c.classList.remove('is-week1-picked'));
+        coachWeek1Pick = null;
+        updateCoachWeek1PickedLabel();
+      }
+    } else {
+      coachPickMode = 'week1';
+      $('coachWeek1PickerBox').classList.remove('hidden');
+    }
+  };
+
+  $('submitCoachBtn').onclick = () => {
+    const email = $('coachEmail').value.trim();
+    if (!email) return alert('メールアドレスを入力してください。');
+
+    if ($('coachNoneRadio').checked) {
+      const reason = $('coachDeclineReason').value.trim();
+      if (!reason) return alert('全日程が対応不可の場合は、理由を入力してください。');
+      return doSubmitCoach(cid, { selectedSlot: 'NONE', email, declineReason: reason, token: coachToken });
+    }
+
+    if (!coachFixedPick) return alert('カレンダーから面談時間を選択してください。');
+
+    if (coachIsFixedType) {
+      const week1Same = $('coachWeek1SameCheckbox').checked;
+      if (!week1Same && !coachWeek1Pick) return alert('1週目の面談日時を選択してください。');
+      const weekday = DAY_LABELS[new Date(coachFixedPick.date + 'T00:00:00').getDay()];
+      const fixedInfo = {
+        date: coachFixedPick.date, weekday: weekday, start: coachFixedPick.start, end: coachFixedPick.end,
+        week1SameAsFixed: week1Same,
+        week1Slot: week1Same ? null : (coachWeek1Pick.date + ' ' + coachWeek1Pick.start + '〜' + coachWeek1Pick.end),
+      };
+
+      // 送信前に、実際に記録される内容を文字で必ず確認してもらう（画面上の色分けだけに頼らないための保険）。
+      // 特に「別」を選んだのに固定と1週目が同じ曜日・時間になっている場合は、はっきり警告する。
+      const fixedLabel = weekday + '曜日 ' + fixedInfo.start + '〜' + fixedInfo.end + '（毎週）';
+      let confirmMessage;
+      if (week1Same) {
+        confirmMessage = '以下の内容で送信します。\n\n固定（1週目以降・毎週）: ' + fixedLabel + '\n\nよろしいですか？';
+      } else {
+        const week1Weekday = DAY_LABELS[new Date(coachWeek1Pick.date + 'T00:00:00').getDay()];
+        const week1Label = fmtSlot(fixedInfo.week1Slot);
+        const isSameAsFixed = week1Weekday === weekday && coachWeek1Pick.start === fixedInfo.start && coachWeek1Pick.end === fixedInfo.end;
+        confirmMessage = '以下の内容で送信します。\n\n1週目のみ: ' + week1Label + '\n固定（2週目以降・毎週）: ' + fixedLabel + '\n\n';
+        if (isSameAsFixed) {
+          confirmMessage = '⚠ 1週目と固定（2週目以降）が、曜日・時間ともに同じ内容になっています。\n'
+            + '「1週目だけ別日程」を選んだ場合は、通常は異なる曜日・時間になります。誤操作の可能性があるため、内容をご確認ください。\n\n'
+            + confirmMessage;
+        }
+        confirmMessage += 'よろしいですか？';
+      }
+      if (!confirm(confirmMessage)) return;
+
+      doSubmitCoach(cid, { selectedSlot: 'FIXED', email, fixedInfo, token: coachToken });
+    } else {
+      const selectedSlot = coachFixedPick.date + ' ' + coachFixedPick.start + '〜' + coachFixedPick.end;
+      doSubmitCoach(cid, { selectedSlot, email, token: coachToken });
+    }
+  };
+}
+
+function doSubmitCoach(cid, payload){
+  $('submitCoachBtn').disabled = true;
+  $('submitCoachBtn').textContent = '送信中…';
+  apiPost('submitCoachSelection', Object.assign({ cid: cid }, payload))
+    .then(() => {
+      if (payload.selectedSlot === 'NONE') {
+        $('coachThanksIconWrap').className = 'w-16 h-16 mx-auto rounded-full bg-cta/10 flex items-center justify-center';
+        $('coachThanksIcon').className = 'material-icons-round text-cta text-3xl';
+        $('coachThanksIcon').textContent = 'event_busy';
+        $('coachThanksTitle').textContent = '全日程「対応不可」で送信しました';
+        $('coachThanksText').innerHTML = '運営が次点のコーチを検討します。<br>この後、あなた側での対応は不要です。';
+      } else {
+        $('coachThanksIconWrap').className = 'w-16 h-16 mx-auto rounded-full bg-light flex items-center justify-center';
+        $('coachThanksIcon').className = 'material-icons-round text-main text-3xl';
+        $('coachThanksIcon').textContent = 'how_to_reg';
+        $('coachThanksTitle').textContent = '確定申請を送信しました';
+        $('coachThanksText').innerHTML = '運営の承認後、確定連絡メールが<br>届きます。今しばらくお待ちください。';
+      }
+      show('coach-thanks');
+    })
+    .catch((err) => {
+      $('submitCoachBtn').disabled = false;
+      $('submitCoachBtn').textContent = 'この内容で確定申請する';
+      alert('送信に失敗しました: ' + err.message);
+    });
+}
+
+// ========================= 確認完了フロー =========================
+function initConfirm(cid, target){
+  setCurrentRole('confirm');
+  show('loading');
+  apiGet('getConfirmTarget', { cid, target })
+    .then((data) => {
+      if (data.error) return showError('リンクが無効です', data.error);
+      $('headerTitle').textContent = '確認完了';
+      $('cfType').textContent = data.type;
+      $('cfStudent').textContent = data.studentName;
+      $('cfCoach').textContent = data.coachName;
+      $('cfSlot').textContent = data.slot ? fmtSlot(data.slot) : '—';
+      if (data.handoverNote) {
+        $('cfHandoverText').textContent = data.handoverNote;
+        $('cfHandoverBox').classList.remove('hidden');
+      } else {
+        $('cfHandoverBox').classList.add('hidden');
+      }
+      // コーチ用の確認完了画面にのみ、固定の案内テンプレート（2名体制引き継ぎ・宿題範囲）を表示する
+      $('cfCoachNoticeBox').classList.toggle('hidden', target !== 'coach');
+      if (data.alreadyConfirmed) {
+        $('confirmBtn').classList.add('hidden');
+        $('cfDone').classList.remove('hidden');
+      }
+      show('confirm');
+    })
+    .catch((err) => showError('読み込みに失敗しました', err.message));
+
+  $('confirmBtn').onclick = () => {
+    $('confirmBtn').disabled = true;
+    $('confirmBtn').textContent = '処理中…';
+    apiPost('confirmReceipt', { cid, target })
+      .then(() => {
+        $('confirmBtn').classList.add('hidden');
+        $('cfDone').classList.remove('hidden');
+      })
+      .catch((err) => alert('処理に失敗しました: ' + err.message));
+  };
+}
+
+// ========================= 検索可能コンボボックス（生徒/コーチ選択） =========================
+// input(検索・表示用) + hidden(実際に送信するID) + ドロップダウン のセットで、
+// 入力すると候補が絞り込まれるインクリメンタルサーチ式のコンボボックスを構築する。
+function setupCombobox({ searchInputId, hiddenInputId, dropdownId, formatLabel, onSelect }){
+  const input = $(searchInputId);
+  const hidden = $(hiddenInputId);
+  const dropdown = $(dropdownId);
+  let items = [];
+
+  function renderList(list){
+    if (list.length === 0) {
+      dropdown.innerHTML = '<div class="px-3 py-2.5 text-xs text-dark/40">該当する候補がありません</div>';
+    } else {
+      dropdown.innerHTML = '';
+      list.forEach((item) => {
+        const label = formatLabel(item);
+        const row = document.createElement('div');
+        row.className = 'px-3 py-2.5 text-sm cursor-pointer hover:bg-light/40';
+        row.textContent = label;
+        row.onmousedown = (e) => {
+          e.preventDefault(); // input の blur より先にクリックを確定させる
+          input.value = label;
+          hidden.value = item.id;
+          dropdown.classList.add('hidden');
+          if (onSelect) onSelect(item);
+        };
+        dropdown.appendChild(row);
+      });
+    }
+    dropdown.classList.remove('hidden');
+  }
+
+  function filterAndRender(){
+    const q = input.value.trim().toLowerCase();
+    const list = q === '' ? items : items.filter((item) => formatLabel(item).toLowerCase().includes(q));
+    renderList(list);
+  }
+
+  input.addEventListener('input', () => {
+    hidden.value = ''; // 入力し直したら選択済みIDは無効化し、再選択を必須にする
+    filterAndRender();
+    if (onSelect) onSelect(null);
+  });
+  input.addEventListener('focus', filterAndRender);
+  document.addEventListener('click', (e) => {
+    if (e.target !== input && !dropdown.contains(e.target)) dropdown.classList.add('hidden');
+  });
+
+  return {
+    setItems(newItems){ items = newItems; },
+    reset(){ input.value = ''; hidden.value = ''; dropdown.classList.add('hidden'); if (onSelect) onSelect(null); },
+  };
+}
+
+// 起票者・承認者向けの「候補から選択、または直接入力」コンボボックス。
+// 生徒/コーチ選択用の setupCombobox と違い、こちらは候補にない名前も自由入力できるよう、
+// 隠しID方式ではなく、入力欄の文字列そのものをそのまま使う（候補クリックは入力補助のみ）。
+function setupFreeTextCombobox({ inputId, dropdownId, formatLabel }){
+  const input = $(inputId);
+  const dropdown = $(dropdownId);
+  let items = [];
+
+  function renderList(list){
+    if (list.length === 0) {
+      dropdown.classList.add('hidden');
+      return;
+    }
+    dropdown.innerHTML = '';
+    list.forEach((item) => {
+      const label = formatLabel(item);
+      const row = document.createElement('div');
+      row.className = 'px-3 py-2.5 text-sm cursor-pointer hover:bg-light/40';
+      row.textContent = label;
+      row.onmousedown = (e) => {
+        e.preventDefault();
+        input.value = label;
+        dropdown.classList.add('hidden');
+      };
+      dropdown.appendChild(row);
+    });
+    dropdown.classList.remove('hidden');
+  }
+
+  function filterAndRender(){
+    const q = input.value.trim().toLowerCase();
+    const list = q === '' ? items : items.filter((item) => formatLabel(item).toLowerCase().includes(q));
+    renderList(list);
+  }
+
+  input.addEventListener('input', filterAndRender);
+  input.addEventListener('focus', filterAndRender);
+  document.addEventListener('click', (e) => {
+    if (e.target !== input && !dropdown.contains(e.target)) dropdown.classList.add('hidden');
+  });
+
+  return {
+    setItems(newItems){ items = newItems; },
+    reset(){ input.value = ''; dropdown.classList.add('hidden'); },
+  };
+}
+
+// 「担当コーチ_初回コーチング」の種別ID。外部シート（通常FIX）との組み合わせ選択が必須になる。
+// ※ コード.gs の CONFIG.COACH_INITIATED_TYPE_ID と必ず同じ値にすること。
+const COACH_INITIATED_TYPE_ID = 'c-0002';
+let selectedExternalCombo = null;
+
+const studentCombo = setupCombobox({
+  searchInputId: 'newStudentSearch', hiddenInputId: 'newStudentId', dropdownId: 'studentDropdown',
+  formatLabel: (s) => s.name + '（' + s.id + ' / ' + s.grade + '）',
+  onSelect: () => refreshExternalCombos(),
+});
+const coachCombo = setupCombobox({
+  searchInputId: 'newCoachSearch', hiddenInputId: 'newCoachId', dropdownId: 'coachDropdown',
+  formatLabel: (c) => c.name + '（' + c.id + '）',
+});
+const createdByCombo = setupFreeTextCombobox({
+  inputId: 'newCreatedBy', dropdownId: 'createdByDropdown',
+  formatLabel: (a) => a.name,
+});
+const approverNameCombo = setupFreeTextCombobox({
+  inputId: 'approveModalNameInput', dropdownId: 'approveModalNameDropdown',
+  formatLabel: (a) => a.name,
+});
+
+// ========================= 管理画面：タブ切り替え =========================
+const ADMIN_TABS = ['create', 'progress', 'needsNextCoach', 'pending', 'alerts'];
+
+function switchAdminTab(tab){
+  ADMIN_TABS.forEach(t => $('panel-' + t).classList.toggle('hidden', t !== tab));
+  document.querySelectorAll('.adminNavBtn').forEach(btn => {
+    btn.classList.toggle('is-active', btn.dataset.tab === tab);
+  });
+  $('adminWrap').querySelector('.flex-1.min-w-0').scrollTop = 0;
+}
+
+function initAdminNav(){
+  document.querySelectorAll('.adminNavBtn').forEach(btn => {
+    btn.onclick = () => switchAdminTab(btn.dataset.tab);
+  });
+}
+
+// ========================= 管理画面 =========================
+function initAdmin(){
+  setCurrentRole('admin');
+  $('headerTitle').textContent = '管理画面';
+  show('admin');
+  initAdminNav();
+  switchAdminTab('create');
+  loadMasters();
+  loadDashboard();
+  $('createBtn').onclick = onCreateAssignment;
+  $('newType').addEventListener('change', refreshExternalCombos);
+
+  $('refreshDashboardBtn').onclick = () => {
+    $('refreshDashboardBtn').disabled = true;
+    loadDashboard().finally(() => { $('refreshDashboardBtn').disabled = false; });
+  };
+  startDashboardPolling();
+}
+
+// スプレッドシート上のデータ（コーチの回答・承認状況など）は、他の画面や
+// スプレッドシート編集によっても変わりうるため、管理画面を開いている間は
+// 一定間隔で自動的に最新状態を取得し直す（＝手動リロードしなくても同期される）。
+let dashboardPollTimer = null;
+const DASHBOARD_POLL_INTERVAL_MS = 30000; // 30秒ごと
+function startDashboardPolling(){
+  if (dashboardPollTimer) return; // 二重起動防止
+  dashboardPollTimer = setInterval(() => { loadDashboard(); }, DASHBOARD_POLL_INTERVAL_MS);
+}
+
+function updateLastUpdatedLabel(){
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  $('dashboardLastUpdated').textContent = '最終更新: ' + pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds());
+}
+
+let coachListCache = [];
+
+function loadMasters(){
+  apiGet('getStudents')
+    .then((students) => studentCombo.setItems(students))
+    .catch((err) => showToast('生徒マスタの取得に失敗しました: ' + err.message, true));
+  apiGet('getCoaches')
+    .then((coaches) => { coachCombo.setItems(coaches); coachListCache = coaches; })
+    .catch((err) => showToast('コーチマスタの取得に失敗しました: ' + err.message, true));
+  apiGet('getAdmins')
+    .then((admins) => {
+      createdByCombo.setItems(admins);
+      approverNameCombo.setItems(admins);
+    })
+    .catch((err) => showToast('管理者マスタの取得に失敗しました: ' + err.message, true));
+  apiGet('getTypes')
+    .then((types) => {
+      const placeholder = '<option value="" disabled selected>面談種別を選択してください</option>';
+      $('newType').innerHTML = placeholder + types.map(t => '<option value="' + t.id + '">' + t.name + '</option>').join('');
+    })
+    .catch((err) => showToast('面談種別マスタの取得に失敗しました: ' + err.message, true));
+}
+
+// ========================= 外部シート（通常FIX）の組み合わせ選択 =========================
+// 面談種別が「担当コーチ_初回コーチング」の場合のみ、対象の生徒に紐づく
+// まだ調整IDが発行されていない組み合わせを外部シートから取得して選択させる。
+function refreshExternalCombos(){
+  const typeId = $('newType').value;
+  const studentId = $('newStudentId').value;
+  const section = $('externalComboSection');
+  const isCoachInitiated = typeId === COACH_INITIATED_TYPE_ID;
+
+  section.classList.toggle('hidden', !isCoachInitiated);
+  $('newTargetWeek').disabled = isCoachInitiated;
+  $('newTargetWeekHint').textContent = isCoachInitiated
+    ? 'この種別では、下で選択した組み合わせの対象週が自動設定されます。'
+    : '初回コーチングなど、実施週が決まっている場合にその週の開始日（月曜日など）を選択してください。生徒画面の案内、および管理画面のアラート判定に使用されます。';
+
+  if (!isCoachInitiated) {
+    selectedExternalCombo = null;
+    updateCreateButtonState();
+    return;
+  }
+
+  selectedExternalCombo = null;
+  if (!studentId) {
+    $('externalComboList').innerHTML = '<p class="text-xs text-dark/40 py-2">先に対象の生徒を選択してください。</p>';
+    updateCreateButtonState();
+    return;
+  }
+
+  $('externalComboList').innerHTML = '<p class="text-xs text-dark/40 py-2">読み込み中…</p>';
+  apiGet('getExternalCombos', { studentId })
+    .then((combos) => renderExternalCombos(combos))
+    .catch((err) => {
+      $('externalComboList').innerHTML = '<p class="text-xs text-cta font-bold py-2">読み込みに失敗しました: ' + err.message + '</p>';
+      updateCreateButtonState();
+    });
+}
+
+function renderExternalCombos(combos){
+  selectedExternalCombo = null;
+  const list = $('externalComboList');
+  list.innerHTML = '';
+  if (!combos || combos.length === 0) {
+    list.innerHTML = '<p class="text-xs text-cta font-bold py-2">この生徒には割り当て可能な組み合わせがありません。起票できません。</p>';
+    updateCreateButtonState();
+    return;
+  }
+  combos.forEach((c) => {
+    const label = document.createElement('label');
+    label.className = 'flex items-start gap-2 p-3 rounded-lg border border-light text-xs cursor-pointer hover:bg-light/30 transition';
+    label.innerHTML =
+      '<input type="radio" name="externalCombo" class="mt-0.5 accent-main" />' +
+      '<div class="min-w-0">' +
+      '<p class="font-bold text-sm">' + (formatTargetWeek(c.startWeek) || c.startWeek || '（開始週未設定）') + '</p>' +
+      '<p class="text-dark/70">' + (c.course || '—') + '</p>' +
+      '<p class="text-dark/50">' + [c.subject, c.content].filter(Boolean).join(' / ') + '</p>' +
+      '<p class="text-main mt-0.5">候補: ' + (c.candidateCoach || '—') + '</p>' +
+      '</div>';
+    label.querySelector('input').addEventListener('change', () => {
+      selectedExternalCombo = c;
+      $('newTargetWeek').value = c.startWeek;
+      updateCreateButtonState();
+    });
+    list.appendChild(label);
+  });
+  updateCreateButtonState();
+}
+
+function updateCreateButtonState(){
+  const typeId = $('newType').value;
+  const btn = $('createBtn');
+  btn.disabled = (typeId === COACH_INITIATED_TYPE_ID) && !selectedExternalCombo;
+}
+
+let pendingCreateContext = null;
+
+function onCreateAssignment(){
+  const studentId = $('newStudentId').value;
+  const typeId = $('newType').value;
+  const coachId = $('newCoachId').value;
+  const createdBy = $('newCreatedBy').value.trim();
+  let targetWeek = $('newTargetWeek').value.trim();
+  if (!studentId) return showToast('候補から生徒を選択してください', true);
+  if (!coachId) return showToast('候補から担当コーチを選択してください', true);
+  if (!typeId) return showToast('面談種別を選択してください', true);
+
+  let externalRowNumber = null;
+  if (typeId === COACH_INITIATED_TYPE_ID) {
+    if (!selectedExternalCombo) return showToast('外部シートの組み合わせを選択してください', true);
+    externalRowNumber = selectedExternalCombo.rowNumber;
+    targetWeek = selectedExternalCombo.startWeek;
+  }
+
+  pendingCreateContext = { studentId, typeId, coachId, createdBy: createdBy || '管理者', targetWeek, externalRowNumber };
+
+  const studentLabel = $('newStudentSearch').value || studentId;
+  const coachLabel = $('newCoachSearch').value || coachId;
+  const typeSelect = $('newType');
+  const typeLabel = (typeSelect.selectedOptions && typeSelect.selectedOptions[0]) ? typeSelect.selectedOptions[0].textContent : typeId;
+
+  $('createConfirmSummary').innerHTML =
+    '<p><span class="text-dark/40">面談種別：</span>' + typeLabel + '</p>' +
+    '<p><span class="text-dark/40">対象の生徒：</span>' + studentLabel + '</p>' +
+    '<p><span class="text-dark/40">担当コーチ：</span>' + coachLabel + '</p>' +
+    (targetWeek ? '<p><span class="text-dark/40">対象週：</span>' + formatTargetWeek(targetWeek) + '</p>' : '');
+  $('createHandoverNote').value = '';
+  $('createConfirmModal').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeCreateConfirmModal(){
+  $('createConfirmModal').classList.add('hidden');
+  document.body.style.overflow = '';
+}
+$('closeCreateConfirmBtn').onclick = closeCreateConfirmModal;
+$('createConfirmBackBtn').onclick = closeCreateConfirmModal;
+$('createConfirmBackdrop').onclick = closeCreateConfirmModal;
+
+$('createConfirmSubmitBtn').onclick = () => {
+  if (!pendingCreateContext) return;
+  const handoverNote = $('createHandoverNote').value.trim();
+  const payload = Object.assign({}, pendingCreateContext, { handoverNote });
+
+  const btn = $('createConfirmSubmitBtn');
+  btn.disabled = true;
+  btn.textContent = '発行中…';
+  apiPost('createAssignment', payload)
+    .then((res) => {
+      btn.disabled = false;
+      btn.textContent = '発行する';
+      closeCreateConfirmModal();
+      pendingCreateContext = null;
+
+      $('createResult').classList.remove('hidden');
+      $('studentLinkInput').value = res.studentUrl;
+      $('coachLinkInput').value = res.coachUrl;
+      setupCopyButton('copyStudentBtn', () => $('studentLinkInput').value);
+      setupCopyButton('copyCoachBtn', () => $('coachLinkInput').value);
+      studentCombo.reset();
+      coachCombo.reset();
+      $('newTargetWeek').value = '';
+      $('newTargetWeek').disabled = false;
+      $('externalComboSection').classList.add('hidden');
+      selectedExternalCombo = null;
+      updateCreateButtonState();
+      showToast('リンクを発行しました');
+      loadDashboard();
+    })
+    .catch((err) => {
+      btn.disabled = false;
+      btn.textContent = '発行する';
+      showToast('起票に失敗しました: ' + err.message, true);
+    });
+};
+
+function loadDashboard(){
+  return apiGet('getAdminDashboard').then((data) => {
+    const pending = data.pending || [];
+    const alerts = data.alerts || [];
+    const needsNextCoach = data.needsNextCoach || [];
+    renderPending(pending);
+    renderAlerts(alerts);
+    renderProgress(data.inProgress || []);
+    renderNeedsNextCoach(needsNextCoach);
+    updateBadge('pending', pending.length);
+    updateBadge('alerts', alerts.length);
+    updateBadge('needsNextCoach', needsNextCoach.length);
+    updateLastUpdatedLabel();
+  });
+}
+
+function updateBadge(key, count){
+  ['badge-' + key, 'badge-' + key + '-m'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (count > 0) { el.textContent = count > 99 ? '99+' : String(count); el.classList.remove('hidden'); }
+    else { el.classList.add('hidden'); }
+  });
+}
+
+function renderPending(items){
+  const wrap = $('pendingList');
+  wrap.innerHTML = '';
+  $('pendingEmpty').classList.toggle('hidden', items.length > 0);
+  items.forEach(it => {
+    const card = document.createElement('div');
+    card.className = 'bg-white border border-light rounded-xl p-4 flex items-start justify-between gap-2 shadow-sm';
+    card.innerHTML =
+      '<div class="text-xs leading-relaxed min-w-0">' +
+      '<p class="font-bold text-sm truncate">' + it.studentName + '<span class="text-dark/40 font-normal"> / ' + it.type + '</span></p>' +
+      '<p class="text-dark/60">担当: ' + it.coachName + '</p>' +
+      (it.createdBy ? '<p class="text-dark/40">起票者: ' + it.createdBy + '</p>' : '') +
+      '<p class="text-main font-bold">' + (it.slot ? fmtSlot(it.slot) : '（時間未取得）') + '</p>' +
+      '<button class="showLinksLinkBtn text-[11px] text-sub font-bold flex items-center gap-0.5 mt-1"><span class="material-icons-round text-sm">link</span>リンクを表示</button>' +
+      '</div>' +
+      '<div class="shrink-0 flex flex-col items-end gap-1.5">' +
+      '<button class="approveBtn px-3 py-2 rounded-lg bg-cta text-white text-xs font-bold hover:brightness-105">承認</button>' +
+      '<button class="cancelBtn w-8 h-8 flex items-center justify-center rounded-lg bg-cta text-white hover:brightness-105 active:scale-95 transition shadow-sm" title="対応不要にする"><span class="material-icons-round text-lg">delete_outline</span></button>' +
+      '</div>';
+    card.querySelector('.approveBtn').onclick = () => openApproveModal(it.cid, card);
+    card.querySelector('.showLinksLinkBtn').onclick = () => openLinksModal(it.cid);
+    card.querySelector('.cancelBtn').onclick = () => cancelAssignmentPrompt(it.cid, () => card.remove());
+    wrap.appendChild(card);
+  });
+}
+
+// ========================= 承認確認モーダル =========================
+// 承認者名は事前入力ではなく、「承認」を押した瞬間にダイアログで入力＋選択させる。
+let pendingApprovalContext = null;
+
+function openApproveModal(cid, card){
+  pendingApprovalContext = { cid, card };
+  approverNameCombo.reset();
+  $('approveModal').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+  setTimeout(() => $('approveModalNameInput').focus(), 50);
+}
+function closeApproveModal(){
+  $('approveModal').classList.add('hidden');
+  document.body.style.overflow = '';
+  pendingApprovalContext = null;
+}
+function confirmApprove(){
+  if (!pendingApprovalContext) return;
+  const approverName = $('approveModalNameInput').value.trim();
+  if (!approverName) {
+    showToast('承認者を入力してください', true);
+    $('approveModalNameInput').focus();
+    return;
+  }
+  const { cid, card } = pendingApprovalContext;
+  const confirmBtn = $('approveModalConfirmBtn');
+  confirmBtn.disabled = true;
+  confirmBtn.textContent = '処理中…';
+  apiPost('approveAssignment', { cid, approverName })
+    .then(() => {
+      showToast('承認しました（承認者: ' + approverName + '）');
+      card.remove();
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = '承認する';
+      closeApproveModal();
+      loadDashboard();
+    })
+    .catch((err) => {
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = '承認する';
+      showToast('承認に失敗しました: ' + err.message, true);
+    });
+}
+$('approveModalCancelBtn').onclick = closeApproveModal;
+$('approveModalBackdrop').onclick = closeApproveModal;
+$('approveModalConfirmBtn').onclick = confirmApprove;
+// ※あえてEnterキーでの送信は行わない。候補一覧からEnterで名前を確定したい場面と
+//   「承認を実行したい」場面が同じキー操作になってしまい、意図せず承認が実行される
+//   事故があったため、承認は必ず「承認する」ボタンのタップ経由のみで行う。
+
+function renderAlerts(items){
+  const wrap = $('alertList');
+  wrap.innerHTML = '';
+  $('alertEmpty').classList.toggle('hidden', items.length > 0);
+  items.forEach(it => {
+    const card = document.createElement('div');
+    const weekLabel = formatTargetWeek(it.targetWeek);
+    const daysLabel = it.overdueDays > 0 ? (it.overdueDays + '日超過') : (Math.abs(it.overdueDays) + '日前');
+
+    card.className = 'bg-cta/10 border border-cta rounded-xl p-4 text-xs space-y-2';
+    card.innerHTML =
+      '<div class="flex items-start gap-2">' +
+      '<span class="material-icons-round text-cta text-lg shrink-0">warning</span>' +
+      '<div class="min-w-0 flex-1"><p class="font-bold">' + it.studentName + ' × ' + it.coachName + '</p>' +
+      '<p class="text-dark/60">確定日時: ' + (it.slot ? fmtSlot(it.slot) : '（時間未取得）') + '（対象週: ' + weekLabel + ' / ' + daysLabel + '）　生徒:' + (it.studentConfirmed ? '済' : '未') + ' / コーチ:' + (it.coachConfirmed ? '済' : '未') + '</p>' +
+      '<button class="showLinksLinkBtn text-[11px] text-sub font-bold flex items-center gap-0.5 mt-1"><span class="material-icons-round text-sm">link</span>リンクを表示</button>' +
+      '</div>' +
+      '<button class="cancelBtn shrink-0 w-8 h-8 flex items-center justify-center rounded-lg bg-cta text-white hover:brightness-105 active:scale-95 transition shadow-sm" title="対応不要にする"><span class="material-icons-round text-lg">delete_outline</span></button>' +
+      '</div>' +
+      '<button class="resendConfirmBtn w-full px-3 py-2 rounded-lg bg-white border border-cta text-cta text-xs font-bold hover:bg-cta/10 transition flex items-center justify-center gap-1">' +
+      '<span class="material-icons-round text-sm">forward_to_inbox</span>確定連絡メールを再送</button>';
+
+    card.querySelector('.showLinksLinkBtn').onclick = () => openLinksModal(it.cid);
+    card.querySelector('.cancelBtn').onclick = () => cancelAssignmentPrompt(it.cid, () => card.remove());
+
+    const resendBtn = card.querySelector('.resendConfirmBtn');
+    resendBtn.onclick = () => {
+      resendBtn.disabled = true;
+      resendBtn.textContent = '送信中…';
+      apiPost('resendConfirmationEmail', { cid: it.cid })
+        .then(() => {
+          showToast('確定連絡メールを再送しました');
+          resendBtn.disabled = false;
+          resendBtn.innerHTML = '<span class="material-icons-round text-sm">forward_to_inbox</span>確定連絡メールを再送';
+        })
+        .catch((err) => {
+          resendBtn.disabled = false;
+          resendBtn.innerHTML = '<span class="material-icons-round text-sm">forward_to_inbox</span>確定連絡メールを再送';
+          showToast('再送に失敗しました: ' + err.message, true);
+        });
+    };
+    wrap.appendChild(card);
+  });
+}
+
+function renderProgress(items){
+  const wrap = $('progressList');
+  wrap.innerHTML = '';
+  $('progressEmpty').classList.toggle('hidden', items.length > 0);
+  if (!items || items.length === 0) return;
+
+  // 面談種別ごとにグループ化（種別名が空のものは「その他」にまとめる）
+  const groups = {};
+  const order = [];
+  items.forEach((it) => {
+    const key = it.type || 'その他';
+    if (!groups[key]) { groups[key] = []; order.push(key); }
+    groups[key].push(it);
+  });
+
+  order.forEach((typeName) => {
+    const groupItems = groups[typeName];
+    const groupBox = document.createElement('div');
+
+    const header = document.createElement('div');
+    header.className = 'flex items-center gap-2 mb-2';
+    header.innerHTML =
+      '<p class="text-xs font-bold text-dark/60">' + typeName + '</p>' +
+      '<span class="px-1.5 py-0.5 rounded-full bg-light/60 text-main text-[10px] font-bold">' + groupItems.length + '件</span>';
+    groupBox.appendChild(header);
+
+    const grid = document.createElement('div');
+    grid.className = 'grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3';
+    groupItems.forEach((it) => {
+      const card = document.createElement('div');
+      // 赤枠＝2日以上ステータスが変わっていない（stale）を優先表示し、
+      // それ以外で対象週が近い（nearingTargetWeek）場合はオレンジ枠にする。
+      let cardClass = 'bg-light/30 border border-light';
+      let warnIcon = '';
+      let warnText = '';
+      if (it.stale) {
+        cardClass = 'bg-red-50 border-2 border-red-400';
+        warnIcon = '<span class="material-icons-round text-red-500 text-sm">warning</span>';
+        warnText = '<p class="text-red-500 font-bold mt-0.5">2日以上ステータスが変わっていません</p>';
+      } else if (it.nearingTargetWeek) {
+        cardClass = 'bg-cta/10 border-2 border-cta';
+        warnIcon = '<span class="material-icons-round text-cta text-sm">event_available</span>';
+        warnText = '<p class="text-cta font-bold mt-0.5">対象週が近づいています</p>';
+      }
+      card.className = cardClass + ' rounded-xl p-4 text-xs flex items-center justify-between cursor-pointer active:opacity-80 transition';
+
+      card.innerHTML =
+        '<div class="min-w-0">' +
+        '<p class="font-bold truncate flex items-center gap-1">' + warnIcon + it.studentName + '</p>' +
+        '<p class="text-dark/50">担当: ' + it.coachName + '</p>' +
+        '<p class="text-dark/40 text-[10px] mt-1">最終更新: ' + (it.statusUpdatedAt || '—') + '（' + it.daysSinceUpdate + '日経過）</p>' +
+        warnText +
+        '</div>' +
+        '<span class="shrink-0 px-2 py-1 rounded-full bg-sub/20 text-sub font-bold">' + it.status + '</span>';
+      card.onclick = () => openProgressDetail(it);
+      grid.appendChild(card);
+    });
+    groupBox.appendChild(grid);
+
+    wrap.appendChild(groupBox);
+  });
+}
+
+// タップでステータス詳細（各ステータスの完了日時）を表示するモーダル。
+// コーチ回答待ちの案件はここから「強制的に次点打診」も行える。
+function openProgressDetail(it){
+  const lines = [];
+  lines.push('<p><span class="text-dark/40">生徒：</span>' + it.studentName + '<span class="text-dark/40"> / 担当：</span>' + it.coachName + '</p>');
+  lines.push('<p><span class="text-dark/40">面談種別：</span>' + it.type + '</p>');
+  lines.push('<p><span class="text-dark/40">現在のステータス：</span><span class="font-bold">' + it.status + '</span></p>');
+  if (it.createdAt) lines.push('<p><span class="text-dark/40">起票日時：</span>' + it.createdAt + '</p>');
+  if (it.studentAnsweredAt) lines.push('<p><span class="text-dark/40">生徒回答日時：</span>' + it.studentAnsweredAt + '</p>');
+  lines.push('<p><span class="text-dark/40">現在のステータスになった日時：</span>' + (it.statusUpdatedAt || '不明') + '（' + it.daysSinceUpdate + '日経過）</p>');
+  if (it.stale) lines.push('<p class="text-red-500 font-bold">⚠ 2日以上ステータスが変わっていません</p>');
+  if (it.nearingTargetWeek) lines.push('<p class="text-cta font-bold">⚠ 対象週が近づいています</p>');
+  if (it.handoverNote) {
+    lines.push('<div class="bg-sub/10 border border-sub rounded-lg p-2.5 mt-1"><p class="text-[11px] font-bold text-sub mb-0.5">コーチへの引き継ぎ事項</p><p class="whitespace-pre-wrap text-dark/80">' + it.handoverNote + '</p></div>');
+  }
+
+  let actionHtml =
+    '<button id="showLinksBtn" type="button" class="w-full mt-3 py-2.5 rounded-lg border border-light text-dark/70 text-sm font-bold hover:bg-light/30 transition flex items-center justify-center gap-1.5">' +
+    '<span class="material-icons-round text-base">link</span>リンクを表示</button>';
+  if (it.status === 'コーチ回答待ち') {
+    actionHtml +=
+      '<button id="forceNextCoachBtn" type="button" class="w-full mt-2 py-2.5 rounded-lg bg-cta text-white text-sm font-bold hover:brightness-105 transition">' +
+      '強制的に次点打診する</button>' +
+      '<p class="text-[11px] text-dark/40 mt-1">現在のコーチのリンクは即座に無効になり、運営が次点コーチを選んで打診できるようになります（次点発生タブ）。</p>';
+  }
+  actionHtml +=
+    '<button id="cancelAssignmentBtn" type="button" class="w-full mt-3 py-2.5 rounded-lg border border-cta text-cta text-sm font-bold hover:bg-cta/10 transition flex items-center justify-center gap-1.5">' +
+    '<span class="material-icons-round text-base">delete_outline</span>この案件を対応不要にする</button>';
+
+  $('progressDetailContent').innerHTML = lines.join('') + actionHtml;
+  $('progressDetailModal').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+
+  $('showLinksBtn').onclick = () => { closeProgressDetail(); openLinksModal(it.cid); };
+  $('cancelAssignmentBtn').onclick = () => cancelAssignmentPrompt(it.cid, closeProgressDetail);
+
+  const btn = document.getElementById('forceNextCoachBtn');
+  if (btn) {
+    btn.onclick = () => {
+      if (!confirm(it.studentName + 'さんの案件を、強制的に次点コーチの検討に進めます。\n現在のコーチ（' + it.coachName + '）のリンクは使用できなくなります。よろしいですか？')) return;
+      btn.disabled = true;
+      btn.textContent = '処理中…';
+      apiPost('forceNextCoach', { cid: it.cid })
+        .then(() => {
+          showToast('次点コーチの検討に進めました');
+          closeProgressDetail();
+          loadDashboard();
+        })
+        .catch((err) => {
+          btn.disabled = false;
+          btn.textContent = '強制的に次点打診する';
+          showToast('処理に失敗しました: ' + err.message, true);
+        });
+    };
+  }
+}
+function closeProgressDetail(){
+  $('progressDetailModal').classList.add('hidden');
+  document.body.style.overflow = '';
+}
+$('closeProgressDetailBtn').onclick = closeProgressDetail;
+$('progressDetailBackdrop').onclick = closeProgressDetail;
+
+// ========================= 対応不要（キャンセル）共通処理 =========================
+// ステータス詳細・次点発生・承認待ち一覧・未確認アラートの各パネルから共通で呼び出す。
+// afterSuccess にはカードのDOM除去やモーダルを閉じる処理などを渡せる（省略可）。
+function cancelAssignmentPrompt(cid, afterSuccess){
+  if (!confirm('この案件を「対応不要」として一覧から外します。\nスプレッドシート上の記録は残りますが、管理画面の各一覧・アラートには表示されなくなります。よろしいですか？')) return;
+  apiPost('cancelAssignment', { cid })
+    .then(() => {
+      showToast('対応不要にしました');
+      if (typeof afterSuccess === 'function') afterSuccess();
+      loadDashboard();
+    })
+    .catch((err) => showToast('処理に失敗しました: ' + err.message, true));
+}
+
+// ========================= 案件ごとのリンク一覧モーダル =========================
+// 生徒用/コーチ用の調整リンク、生徒用/コーチ用の確認完了リンクをその場で確認・コピーできる。
+// 保護者には、生徒用の確認完了リンクを共有いただく想定（生徒への確定メールと同じCC先に送られるリンク）。
+function openLinksModal(cid){
+  $('linksModalContent').innerHTML = '<p class="text-dark/40 text-center py-6">読み込み中…</p>';
+  $('linksModal').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+  apiGet('getAssignmentLinks', { cid })
+    .then((data) => renderLinksModal(data))
+    .catch((err) => {
+      $('linksModalContent').innerHTML = '<p class="text-cta text-center py-6">読み込みに失敗しました: ' + err.message + '</p>';
+    });
+}
+function closeLinksModal(){
+  $('linksModal').classList.add('hidden');
+  document.body.style.overflow = '';
+}
+function renderLinksModal(data){
+  const box = $('linksModalContent');
+  box.innerHTML = '';
+
+  const header = document.createElement('p');
+  header.className = 'font-bold text-sm mb-1';
+  header.textContent = data.studentName + ' / 担当: ' + data.coachName;
+  box.appendChild(header);
+
+  const rows = [
+    { label: '生徒用 調整リンク', url: data.studentUrl },
+    { label: 'コーチ用 調整リンク', url: data.coachUrl },
+    { label: '生徒用 確認完了リンク（保護者にもこちらを共有できます）', url: data.studentConfirmUrl },
+    { label: 'コーチ用 確認完了リンク', url: data.coachConfirmUrl },
+  ];
+  rows.forEach((r) => {
+    const div = document.createElement('div');
+    div.className = 'bg-light/40 rounded-lg p-2.5 border border-light space-y-1.5';
+    div.innerHTML =
+      '<p class="text-[10px] font-bold text-dark/50">' + r.label + '</p>' +
+      '<div class="flex items-center gap-1.5">' +
+      '<input type="text" readonly value="' + r.url + '" class="flex-1 min-w-0 text-[11px] bg-white rounded-md border border-light px-2 py-1.5 truncate" />' +
+      '<button class="copyLinkBtn shrink-0 px-2.5 py-1.5 rounded-md bg-main text-white text-[11px] font-bold hover:bg-sub transition flex items-center gap-1">' +
+      '<span class="material-icons-round text-sm">content_copy</span><span class="btnLabel">コピー</span></button>' +
+      '</div>';
+    const copyBtn = div.querySelector('.copyLinkBtn');
+    const label = copyBtn.querySelector('.btnLabel');
+    copyBtn.onclick = () => {
+      copyToClipboard(r.url)
+        .then(() => {
+          label.textContent = 'コピーしました！';
+          showToast('リンクをコピーしました');
+          setTimeout(() => { label.textContent = 'コピー'; }, 2000);
+        })
+        .catch(() => showToast('コピーに失敗しました。手動で選択してコピーしてください。', true));
+    };
+    box.appendChild(div);
+  });
+}
+$('closeLinksModalBtn').onclick = closeLinksModal;
+$('linksModalBackdrop').onclick = closeLinksModal;
+
+let nextCoachComboCounter = 0;
+
+function renderNeedsNextCoach(items){
+  const wrap = $('needsNextCoachList');
+  wrap.innerHTML = '';
+  $('needsNextCoachEmpty').classList.toggle('hidden', items.length > 0);
+  items.forEach(it => {
+    const uid = 'nextCoachCombo_' + (nextCoachComboCounter++);
+    const searchId = uid + '_search';
+    const hiddenId = uid + '_id';
+    const dropdownId = uid + '_dropdown';
+
+    const card = document.createElement('div');
+    card.className = 'bg-white border border-light rounded-xl p-4 text-xs space-y-2 shadow-sm';
+
+    const slotsHtml = (it.slots || []).map(s => '<li>' + fmtSlot(s) + '</li>').join('') || '<li>—</li>';
+    const isExpired = it.reasonKind === 'expired';
+    const tagHtml = isExpired
+      ? '<span class="shrink-0 px-2 py-0.5 rounded-full bg-sub/20 text-sub font-bold">回答期限切れ</span>'
+      : '<span class="shrink-0 px-2 py-0.5 rounded-full bg-cta/10 text-cta font-bold">全日程対応不可</span>';
+
+    card.innerHTML =
+      '<div class="flex items-center justify-between gap-2">' +
+        '<p class="font-bold text-sm truncate">' + it.studentName + '<span class="text-dark/40 font-normal"> / ' + it.type + '</span></p>' +
+        '<div class="flex items-center gap-1 shrink-0">' + tagHtml +
+        '<button class="cancelBtn w-7 h-7 flex items-center justify-center rounded-lg bg-cta text-white hover:brightness-105 active:scale-95 transition shadow-sm" title="対応不要にする"><span class="material-icons-round text-base">delete_outline</span></button>' +
+        '</div>' +
+      '</div>' +
+      '<p class="text-dark/60">対象週: ' + (it.targetWeek ? formatTargetWeek(it.targetWeek) : '—') + '</p>' +
+      '<p class="text-dark/60">' + (isExpired ? '回答期限が切れたコーチ: ' : '対応不可だったコーチ: ') + it.declinedCoachName + '</p>' +
+      (!isExpired && it.declineReason ? '<p class="text-cta font-bold">辞退理由: ' + it.declineReason + '</p>' : '') +
+      (it.candidateCoach ? '<p class="text-main">初回FIXシートのコーチ候補: ' + it.candidateCoach + '</p>' : '') +
+      (it.remarks ? '<p class="text-dark/60">備考: ' + it.remarks + '</p>' : '') +
+      '<button class="showLinksLinkBtn text-[11px] text-sub font-bold flex items-center gap-0.5"><span class="material-icons-round text-sm">link</span>リンクを表示</button>' +
+      '<div><p class="font-bold text-dark/50 mb-1">生徒の希望時間帯</p>' +
+      '<ul class="list-disc list-inside text-dark/70 space-y-0.5">' + slotsHtml + '</ul></div>' +
+      '<div class="pt-2 border-t border-light space-y-2">' +
+        '<div class="relative">' +
+          '<input id="' + searchId + '" type="text" autocomplete="off" placeholder="次点コーチを検索…" ' +
+            'class="w-full rounded-lg border border-light p-2 pr-8 text-xs focus:ring-2 focus:ring-sub bg-white" />' +
+          '<span class="material-icons-round absolute right-2 top-1/2 -translate-y-1/2 text-dark/30 text-base pointer-events-none">search</span>' +
+          '<input type="hidden" id="' + hiddenId + '" />' +
+          '<div id="' + dropdownId + '" class="hidden absolute z-30 mt-1 w-full max-h-48 overflow-y-auto bg-white border border-light rounded-lg shadow-lg"></div>' +
+        '</div>' +
+        '<button class="nextCoachSendBtn w-full px-3 py-2 rounded-lg bg-main text-white text-xs font-bold hover:bg-sub transition">次点コーチへ送信</button>' +
+      '</div>';
+
+    // コンボボックスは対象のinput/dropdownがDOM上に存在してから初期化する必要があるため、先にappendする
+    wrap.appendChild(card);
+    card.querySelector('.showLinksLinkBtn').onclick = () => openLinksModal(it.cid);
+    card.querySelector('.cancelBtn').onclick = () => cancelAssignmentPrompt(it.cid, () => card.remove());
+
+    const nextCoachCombo = setupCombobox({
+      searchInputId: searchId, hiddenInputId: hiddenId, dropdownId: dropdownId,
+      formatLabel: (c) => c.name + '（' + c.id + '）',
+    });
+    nextCoachCombo.setItems(coachListCache);
+
+    const sendBtn = card.querySelector('.nextCoachSendBtn');
+    sendBtn.onclick = () => {
+      const newCoachId = $(hiddenId).value;
+      if (!newCoachId) return showToast('候補から次点コーチを選択してください', true);
+      sendBtn.disabled = true;
+      sendBtn.textContent = '送信中…';
+      apiPost('reassignToNextCoach', { cid: it.cid, newCoachId })
+        .then(() => {
+          showToast('次点コーチへ送信しました');
+          card.remove();
+          loadDashboard();
+        })
+        .catch((err) => {
+          sendBtn.disabled = false;
+          sendBtn.textContent = '次点コーチへ送信';
+          showToast('送信に失敗しました: ' + err.message, true);
+        });
+    };
+  });
+}
+</script>
+</body>
+</html>
