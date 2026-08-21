@@ -329,6 +329,17 @@
           </p>
           <p class="text-dark/80 whitespace-pre-wrap" id="cfHandoverText">—</p>
         </div>
+        <div id="cfStudentHandoverBox" class="hidden bg-white border border-light rounded-xl p-4 text-sm space-y-3">
+          <p class="text-xs font-bold text-main flex items-center gap-1">
+            <span class="material-icons-round text-base">badge</span>生徒引き継ぎ情報
+          </p>
+          <div id="cfStudentHandoverGroups" class="space-y-3"></div>
+          <div class="border-t border-light pt-3">
+            <p class="text-xs font-bold text-dark/70 mb-1">入塾前の面談担当者からの引き継ぎ</p>
+            <p class="text-dark/80 whitespace-pre-wrap text-xs" id="cfPreEnrollmentNote">—</p>
+          </div>
+          <p class="text-[11px] text-dark/40">※入塾時期によってデータがない場合があります。</p>
+        </div>
         <div id="cfCoachNoticeBox" class="hidden bg-light/50 border border-light rounded-xl p-4 text-xs leading-relaxed space-y-3">
           <div>
             <p class="font-bold text-dark mb-1">●コーチ2名体制生徒 引き継ぎ作成のお願い</p>
@@ -1724,6 +1735,33 @@ function doSubmitCoach(cid, payload){
 }
 
 // ========================= 確認完了フロー =========================
+// 「生徒引き継ぎ情報」ボックスを描画する（新コーチの確認完了画面のみ、data.studentHandover が渡ってくる）。
+// ジャンルごとにカード分けして表示し、値が空の項目は「データなし」のままグレー表示にする。
+function renderStudentHandover(data){
+  const box = $('cfStudentHandoverBox');
+  if (!data || !data.hasData) {
+    box.classList.add('hidden');
+    return;
+  }
+  const groupsWrap = $('cfStudentHandoverGroups');
+  groupsWrap.innerHTML = '';
+  data.groups.forEach((group) => {
+    const card = document.createElement('div');
+    card.className = 'bg-light/30 rounded-lg p-3';
+    const rows = group.items.map((item) => {
+      const isEmpty = item.value === 'データなし';
+      const valueClass = isEmpty ? 'text-dark/35' : 'text-dark/80';
+      return '<p class="flex gap-2"><span class="text-dark/50 shrink-0">' + item.label + '：</span><span class="' + valueClass + ' whitespace-pre-wrap">' + item.value + '</span></p>';
+    }).join('');
+    card.innerHTML = '<p class="text-[11px] font-bold text-main mb-1.5">' + group.label + '</p><div class="space-y-1">' + rows + '</div>';
+    groupsWrap.appendChild(card);
+  });
+  const preEmpty = data.preEnrollmentNote === 'データなし';
+  $('cfPreEnrollmentNote').textContent = data.preEnrollmentNote;
+  $('cfPreEnrollmentNote').classList.toggle('text-dark/35', preEmpty);
+  box.classList.remove('hidden');
+}
+
 function initConfirm(cid, target){
   setCurrentRole('confirm');
   show('loading');
@@ -1741,6 +1779,7 @@ function initConfirm(cid, target){
       } else {
         $('cfHandoverBox').classList.add('hidden');
       }
+      renderStudentHandover(data.studentHandover);
       // コーチ用の確認完了画面にのみ、固定の案内テンプレート（2名体制引き継ぎ・宿題範囲）を表示する
       $('cfCoachNoticeBox').classList.toggle('hidden', target !== 'coach');
       if (data.alreadyConfirmed) {
@@ -2240,7 +2279,7 @@ function renderAlerts(items){
       '<div class="flex items-start gap-2">' +
       '<span class="material-icons-round text-cta text-lg shrink-0">warning</span>' +
       '<div class="min-w-0 flex-1"><p class="font-bold">' + it.studentName + ' × ' + it.coachName + '</p>' +
-      '<p class="text-dark/60">確定日時: ' + (it.slot ? fmtSlot(it.slot) : '（時間未取得）') + '（対象週: ' + weekLabel + (daysLabel ? ' / ' + daysLabel : '') + '）　生徒:' + (it.studentConfirmed ? '済' : '未') + ' / コーチ:' + (it.coachConfirmed ? '済' : '未') + '</p>' +
+      '<p class="text-dark/60">確定日時: ' + (it.slot ? fmtSlot(it.slot) : '（時間未取得）') + '（対象週: ' + weekLabel + (daysLabel ? ' / ' + daysLabel : '') + '）　生徒:' + (it.studentConfirmed ? '済' : '未') + ' / コーチ:' + (it.coachConfirmed ? '済' : '未') + (it.typeId === COACH_CHANGE_TYPE_ID ? ' / 旧コーチ:' + (it.oldCoachConfirmed ? '済' : '未') : '') + '</p>' +
       '<button class="showLinksLinkBtn text-[11px] text-sub font-bold flex items-center gap-0.5 mt-1"><span class="material-icons-round text-sm">link</span>リンクを表示</button>' +
       '</div>' +
       '<button class="cancelBtn shrink-0 w-8 h-8 flex items-center justify-center rounded-lg bg-cta text-white hover:brightness-105 active:scale-95 transition shadow-sm" title="対応不要にする"><span class="material-icons-round text-lg">delete_outline</span></button>' +
