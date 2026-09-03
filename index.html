@@ -1305,8 +1305,9 @@ $('coachChangeListBackdrop').onclick = closeCoachChangeList;
 // 初回FIXリスト／コーチ変更対応リスト／コース変更対応リストの「この内容で起票する」ボタンから呼ばれる。
 // モーダルを閉じて新規起票タブへ切り替え、面談種別・対象の生徒・担当コーチ（候補の1人目）まで
 // 自動入力し、あとは起票ボタンを押すだけの状態にする。
-// c-0002／c-0003は外部シートの組み合わせ選択が必須（pendingComboRowNumber経由で自動選択）。
-// c-0004（コース変更に伴うコーチ変更）は組み合わせ選択の仕組みを使わず、対象週を直接入力する。
+// c-0002／c-0003／c-0004はいずれも外部シートの組み合わせ選択が必須で、
+// pendingComboRowNumber経由で対応する行を自動選択する（生徒を選んだ瞬間に候補を再取得するため、
+// 一覧を開いてから時間が経って行が削除されても、古い行番号のまま書き込まれることはない）。
 function prefillCreateFromListRow(row, typeId, options){
   options = options || {};
   closeFixList();
@@ -1316,16 +1317,8 @@ function prefillCreateFromListRow(row, typeId, options){
 
   $('newType').value = typeId;
 
-  const usesComboUi = (typeId === COACH_INITIATED_TYPE_ID) || (typeId === COACH_CHANGE_TYPE_ID);
-  if (usesComboUi) {
-    // renderExternalCombos内で、この行番号と一致する組み合わせを自動選択する
-    pendingComboRowNumber = row.rowNumber;
-    pendingCourseChangeSourceRow = null;
-  } else {
-    pendingComboRowNumber = null;
-    // コース変更対応リスト経由の場合のみ、起票成功後にこの行のT列へcidを書き戻す
-    pendingCourseChangeSourceRow = (typeId === COURSE_CHANGE_TYPE_ID) ? row.rowNumber : null;
-  }
+  // renderExternalCombos内で、この行番号と一致する組み合わせを自動選択する
+  pendingComboRowNumber = row.rowNumber;
 
   // 生徒を選択（selectByIdがonSelect経由でrefreshExternalCombos()を呼び、組み合わせ一覧を取得する）
   const studentSelected = studentCombo.selectById(row.studentCode);
@@ -1333,12 +1326,7 @@ function prefillCreateFromListRow(row, typeId, options){
     // 生徒マスタの読み込みが間に合っていない等のフォールバック
     $('newStudentSearch').value = row.studentName + '（' + row.studentCode + '）';
     $('newStudentId').value = row.studentCode;
-    if (usesComboUi) refreshExternalCombos();
-  }
-
-  // 組み合わせ選択の仕組みを使わない種別（c-0004）は、対象週を直接入力する
-  if (!usesComboUi && options.targetWeek) {
-    $('newTargetWeek').value = options.targetWeek;
+    refreshExternalCombos();
   }
 
   // 担当コーチは候補の1人目のみを自動選択する
@@ -1351,7 +1339,7 @@ function prefillCreateFromListRow(row, typeId, options){
     }
   }
 
-  showToast('起票フォームに内容を入力しました。内容を確認して起票してください。');
+  showToast('起票フォームに内容を入力しました。組み合わせを確認して起票してください。');
 }
 
 // ========================= コース変更に伴うコーチ変更対応リスト モーダル =========================
@@ -1458,7 +1446,6 @@ function renderCourseChangeCoachList(rows){
     }
     if (r.hasAdd) {
       card.querySelector('.createFromListBtn').onclick = () => prefillCreateFromListRow(r, COURSE_CHANGE_TYPE_ID, {
-        targetWeek: r.newCourseStartWeek,
         candidateCoachNames: r.newCoachCandidate,
       });
     }
@@ -2236,15 +2223,13 @@ const COURSE_CHANGE_TYPE_ID = 'c-0004';
 // ※ コード.gs の CONFIG.COURSE_CHANGE_EXIT_NOTICE_CREATED_BY と必ず同じ値にすること。
 const COURSE_CHANGE_EXIT_NOTICE_CREATED_BY = '（コース変更_fixリストより自動作成）';
 let selectedExternalCombo = null;
-// 一覧モーダル（初回FIXリスト／コーチ変更対応リスト）から「起票」ボタンで遷移してきた場合、
-// 組み合わせ一覧が読み込まれた時点で自動選択すべき行番号を一時的に保持する。
+// 一覧モーダル（初回FIXリスト／コーチ変更対応リスト／コース変更対応リスト）から「起票」ボタンで
+// 遷移してきた場合、組み合わせ一覧が読み込まれた時点で自動選択すべき行番号を一時的に保持する。
 let pendingComboRowNumber = null;
-// コース変更対応リストから「起票」した場合のみ、起票成功後にこの行番号へcidを書き戻す。
-let pendingCourseChangeSourceRow = null;
 
 const studentCombo = setupCombobox({
   searchInputId: 'newStudentSearch', hiddenInputId: 'newStudentId', dropdownId: 'studentDropdown',
-  formatLabel: (s) => s.name + '（' + s.id + ' / ' + s.grade + '）',
+  formatLabel: (s) => s.name + '（' + s.id + (s.grade ? ' / ' + s.grade : '') + '）',
   onSelect: () => refreshExternalCombos(),
 });
 const coachCombo = setupCombobox({
@@ -2342,14 +2327,16 @@ function refreshExternalCombos(){
   const typeId = $('newType').value;
   const studentId = $('newStudentId').value;
   const section = $('externalComboSection');
-  const requiresCombo = (typeId === COACH_INITIATED_TYPE_ID) || (typeId === COACH_CHANGE_TYPE_ID);
+  const requiresCombo = (typeId === COACH_INITIATED_TYPE_ID) || (typeId === COACH_CHANGE_TYPE_ID) || (typeId === COURSE_CHANGE_TYPE_ID);
 
   section.classList.toggle('hidden', !requiresCombo);
   $('newTargetWeek').disabled = requiresCombo;
   $('newTargetWeekHint').textContent = requiresCombo
     ? 'この種別では、下で選択した組み合わせの対象週が自動設定されます。'
     : '初回コーチングなど、実施週が決まっている場合にその週の開始日（月曜日など）を選択してください。生徒画面の案内、および管理画面のアラート判定に使用されます。';
-  $('externalComboSourceLabel').textContent = (typeId === COACH_CHANGE_TYPE_ID) ? 'コーチ変更_fix' : '通常FIX';
+  $('externalComboSourceLabel').textContent =
+    (typeId === COACH_CHANGE_TYPE_ID) ? 'コーチ変更_fix' :
+    (typeId === COURSE_CHANGE_TYPE_ID) ? 'コース変更_fix' : '通常FIX';
 
   if (!requiresCombo) {
     selectedExternalCombo = null;
@@ -2415,7 +2402,7 @@ function renderExternalCombos(combos){
 function updateCreateButtonState(){
   const typeId = $('newType').value;
   const btn = $('createBtn');
-  const requiresCombo = (typeId === COACH_INITIATED_TYPE_ID) || (typeId === COACH_CHANGE_TYPE_ID);
+  const requiresCombo = (typeId === COACH_INITIATED_TYPE_ID) || (typeId === COACH_CHANGE_TYPE_ID) || (typeId === COURSE_CHANGE_TYPE_ID);
   btn.disabled = requiresCombo && !selectedExternalCombo;
 }
 
@@ -2432,17 +2419,13 @@ function onCreateAssignment(){
   if (!typeId) return showToast('面談種別を選択してください', true);
 
   let externalRowNumber = null;
-  if ((typeId === COACH_INITIATED_TYPE_ID) || (typeId === COACH_CHANGE_TYPE_ID)) {
+  if ((typeId === COACH_INITIATED_TYPE_ID) || (typeId === COACH_CHANGE_TYPE_ID) || (typeId === COURSE_CHANGE_TYPE_ID)) {
     if (!selectedExternalCombo) return showToast('外部シートの組み合わせを選択してください', true);
     externalRowNumber = selectedExternalCombo.rowNumber;
     targetWeek = selectedExternalCombo.startWeek;
   }
 
-  // 「コース変更対応リスト」の「この内容で起票する」経由の場合のみ、起票と同じリクエストの中で
-  // コース変更_fixシートのAA列へcidを書き込む（起票そのものと1回のAPI呼び出しで完結させる）。
-  const courseChangeRowNumber = (typeId === COURSE_CHANGE_TYPE_ID) ? pendingCourseChangeSourceRow : null;
-
-  pendingCreateContext = { studentId, typeId, coachId, createdBy: createdBy || '管理者', targetWeek, externalRowNumber, courseChangeRowNumber };
+  pendingCreateContext = { studentId, typeId, coachId, createdBy: createdBy || '管理者', targetWeek, externalRowNumber };
 
   const studentLabel = $('newStudentSearch').value || studentId;
   const coachLabel = $('newCoachSearch').value || coachId;
@@ -2453,8 +2436,7 @@ function onCreateAssignment(){
     '<p><span class="text-dark/40">面談種別：</span>' + typeLabel + '</p>' +
     '<p><span class="text-dark/40">対象の生徒：</span>' + studentLabel + '</p>' +
     '<p><span class="text-dark/40">担当コーチ：</span>' + coachLabel + '</p>' +
-    (targetWeek ? '<p><span class="text-dark/40">対象週：</span>' + formatTargetWeek(targetWeek) + '</p>' : '') +
-    (courseChangeRowNumber ? '<p><span class="text-dark/40">コース変更_fix連携：</span>あり（' + courseChangeRowNumber + '行目に紐付け）</p>' : '');
+    (targetWeek ? '<p><span class="text-dark/40">対象週：</span>' + formatTargetWeek(targetWeek) + '</p>' : '');
   $('createHandoverNote').value = '';
   $('createConfirmModal').classList.remove('hidden');
   document.body.style.overflow = 'hidden';
@@ -2482,9 +2464,6 @@ $('createConfirmSubmitBtn').onclick = () => {
       btn.textContent = '発行する';
       closeCreateConfirmModal();
       pendingCreateContext = null;
-      // 紐付けは起票（createAssignment）と同じリクエストの中で完結しているため、
-      // ここでの別呼び出しは不要。UI上の状態だけリセットしておく。
-      pendingCourseChangeSourceRow = null;
 
       $('createResult').classList.remove('hidden');
       $('studentLinkInput').value = res.studentUrl;
