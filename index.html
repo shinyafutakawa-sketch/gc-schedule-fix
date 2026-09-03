@@ -1419,16 +1419,19 @@ function renderCourseChangeCoachList(rows){
       '</div>';
 
     const actionButtons = [];
-    if (r.hasRemove) {
-      actionButtons.push(
-        '<button class="exitNoticeBtn flex-1 py-1.5 rounded-lg bg-cta text-white text-xs font-bold hover:brightness-105 active:scale-[.98] transition flex items-center justify-center gap-1">' +
-        '<span class="material-icons-round text-sm">mail</span>旧コーチへ担当終了通知を送信</button>'
-      );
-    }
     if (r.hasAdd) {
+      // コーチ追加を含む場合は、承認後に自動で担当終了メールが送られるため、
+      // このリストからの手動送信ボタンは不要にし、「起票」だけできるようにする。
       actionButtons.push(
         '<button class="createFromListBtn flex-1 py-1.5 rounded-lg bg-main text-white text-xs font-bold hover:brightness-105 active:scale-[.98] transition flex items-center justify-center gap-1">' +
         '<span class="material-icons-round text-sm">add_link</span>この内容で起票する</button>'
+      );
+    } else if (r.hasRemove) {
+      // コーチ除外のみの場合は、日程調整（起票）が発生しないため、このボタンから
+      // 生徒・旧コーチへ直接お知らせする。
+      actionButtons.push(
+        '<button class="exitNoticeBtn flex-1 py-1.5 rounded-lg bg-cta text-white text-xs font-bold hover:brightness-105 active:scale-[.98] transition flex items-center justify-center gap-1">' +
+        '<span class="material-icons-round text-sm">mail</span>生徒・旧コーチへ担当終了通知を送信</button>'
       );
     }
     if (actionButtons.length) {
@@ -1438,7 +1441,7 @@ function renderCourseChangeCoachList(rows){
     card.innerHTML = html;
     card.querySelector('.courseDetailBtn').onclick = () => openTextDetailModal('コース変更詳細', r.courseChangeDetail);
     card.querySelector('.coachDetailBtn').onclick = () => openTextDetailModal('コーチ変更詳細', r.coachChangeDetail);
-    if (r.hasRemove) {
+    if (!r.hasAdd && r.hasRemove) {
       card.querySelector('.exitNoticeBtn').onclick = () => onSendCourseChangeExitNotice(r, card.querySelector('.exitNoticeBtn'));
     }
     if (r.hasAdd) {
@@ -1458,34 +1461,29 @@ $('courseChangeCoachListBackdrop').onclick = closeCourseChangeCoachList;
 // （生徒への案内は、生徒の日程調整リンクを開いた際の確認画面で行う）。
 // 送信前に必ず確認ダイアログを挟む。送信成功後はボタンを「送信済み」表示に変え、
 // 誤って連続クリックできないようにする。
+// 「生徒・旧コーチへ担当終了通知を送信」ボタンから呼ばれる（コーチ除外のみの行にのみ表示される）。
+// 送信前に必ず確認ダイアログを挟む。送信成功後はボタンを「送信済み」表示に変え、
+// 誤って連続クリックできないようにする。
 function onSendCourseChangeExitNotice(row, btn){
-  const confirmMsg = row.hasAdd
-    ? (row.studentName + 'さん（' + row.studentCode + '）について、\n'
-      + '旧コーチ「' + (row.oldCoachName || '—') + '」へ担当終了のお知らせメールを送信します。\n'
-      + '（この行には「コーチ追加」も含まれるため、生徒への案内は新コーチとの日程調整リンクを開いた際の確認画面で行われます）\n\n'
-      + 'よろしいですか？')
-    : (row.studentName + 'さん（' + row.studentCode + '）について、\n'
-      + '・旧コーチ「' + (row.oldCoachName || '—') + '」へ担当終了のお知らせメール\n'
-      + '・生徒へ「いつまで旧コーチ／いつから新体制か」の確認メール\n'
-      + 'をそれぞれ送信します（この行は「コーチ除外のみ」のため、生徒にも直接お知らせします）。\n\n'
-      + 'よろしいですか？');
+  const confirmMsg = row.studentName + 'さん（' + row.studentCode + '）について、\n'
+    + '・旧コーチ「' + (row.oldCoachName || '—') + '」へ担当終了のお知らせメール\n'
+    + '・生徒へ「いつまで旧コーチ／いつから新体制か」の確認メール\n'
+    + 'をそれぞれ送信します。よろしいですか？';
   if (!confirm(confirmMsg)) return;
 
   btn.disabled = true;
   btn.innerHTML = '<span class="material-icons-round text-sm">hourglass_top</span>送信中…';
   apiPost('notifyCourseChangeCoachExit', { rowNumber: row.rowNumber })
-    .then((res) => {
+    .then(() => {
       btn.innerHTML = '<span class="material-icons-round text-sm">check</span>送信済み';
       btn.classList.remove('bg-cta');
       btn.classList.add('bg-dark/30');
-      showToast(res.studentNotified
-        ? '旧コーチ・生徒へ担当終了通知を送信しました（進行中の調整／未確認アラートで確認状況を追えます）'
-        : '旧コーチへ担当終了通知を送信しました（進行中の調整／未確認アラートで確認状況を追えます）');
+      showToast('旧コーチ・生徒へ担当終了通知を送信しました（進行中の調整／未確認アラートで確認状況を追えます）');
       loadDashboard();
     })
     .catch((err) => {
       btn.disabled = false;
-      btn.innerHTML = '<span class="material-icons-round text-sm">mail</span>旧コーチへ担当終了通知を送信';
+      btn.innerHTML = '<span class="material-icons-round text-sm">mail</span>生徒・旧コーチへ担当終了通知を送信';
       showToast('送信に失敗しました: ' + err.message, true);
     });
 }
@@ -2620,7 +2618,7 @@ function renderAlerts(items){
       '<div class="flex items-start gap-2">' +
       '<span class="material-icons-round text-cta text-lg shrink-0">warning</span>' +
       '<div class="min-w-0 flex-1"><p class="font-bold">' + it.studentName + ' × ' + it.coachName + '</p>' +
-      '<p class="text-dark/60">確定日時: ' + (it.slot ? fmtSlot(it.slot) : '（時間未取得）') + '（対象週: ' + weekLabel + (daysLabel ? ' / ' + daysLabel : '') + '）　生徒:' + (it.studentConfirmed ? '済' : '未') + ' / コーチ:' + (it.coachConfirmed ? '済' : '未') + (it.typeId === COACH_CHANGE_TYPE_ID ? ' / 旧コーチ:' + (it.oldCoachConfirmed ? '済' : '未') : '') + '</p>' +
+      '<p class="text-dark/60">確定日時: ' + (it.slot ? fmtSlot(it.slot) : '（時間未取得）') + '（対象週: ' + weekLabel + (daysLabel ? ' / ' + daysLabel : '') + '）　生徒:' + (it.studentConfirmed ? '済' : '未') + ' / コーチ:' + (it.coachConfirmed ? '済' : '未') + ((it.typeId === COACH_CHANGE_TYPE_ID || (it.typeId === COURSE_CHANGE_TYPE_ID && it.hasCourseChangeOldCoach)) ? ' / 旧コーチ:' + (it.oldCoachConfirmed ? '済' : '未') : '') + '</p>' +
       '<button class="showLinksLinkBtn text-[11px] text-sub font-bold flex items-center gap-0.5 mt-1"><span class="material-icons-round text-sm">link</span>リンクを表示</button>' +
       '</div>' +
       '<button class="cancelBtn shrink-0 w-8 h-8 flex items-center justify-center rounded-lg bg-cta text-white hover:brightness-105 active:scale-95 transition shadow-sm" title="対応不要にする"><span class="material-icons-round text-lg">delete_outline</span></button>' +
