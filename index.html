@@ -95,6 +95,11 @@
           <span class="material-icons-round text-base leading-none">switch_account</span>
           コーチ変更対応リスト
         </button>
+        <button id="courseChangeCoachListBtn" type="button"
+           class="items-center gap-1 px-3 py-2 rounded-full border border-white/30 text-white text-xs font-bold hover:bg-white/10 active:scale-[.97] transition">
+          <span class="material-icons-round text-base leading-none">move_up</span>
+          コース変更に伴うコーチ変更対応リスト
+        </button>
         <a id="crmLink" href="https://gc-crm-two.vercel.app/" target="_blank" rel="noopener"
            class="items-center gap-1 px-3 py-2 rounded-full border border-white/30 text-white text-xs font-bold hover:bg-white/10 active:scale-[.97] transition">
           <span class="material-icons-round text-base leading-none">sync</span>
@@ -654,6 +659,43 @@
     </div>
   </div>
 
+  <!-- コース変更に伴うコーチ変更対応リスト モーダル -->
+  <div id="courseChangeCoachListModal" class="hidden fixed inset-0 z-50">
+    <div id="courseChangeCoachListBackdrop" class="absolute inset-0 bg-dark/60"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-3 md:p-6">
+      <div class="relative bg-white w-full max-w-3xl h-[88vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+        <div class="flex items-center justify-between px-4 py-3 bg-dark text-white shrink-0">
+          <p class="font-bold text-sm flex items-center gap-2"><span class="material-icons-round text-base">move_up</span>コース変更に伴うコーチ変更対応リスト</p>
+          <button id="closeCourseChangeCoachListBtn" class="w-8 h-8 rounded-full hover:bg-white/10 flex items-center justify-center transition">
+            <span class="material-icons-round">close</span>
+          </button>
+        </div>
+        <div class="flex-1 overflow-y-auto p-4 bg-[#EEF3F5]">
+          <p class="text-[11px] text-dark/40 mb-3">外部「コース変更_fix」シートのうち、変更フラグ（M列）に「コーチ追加」または「コーチ除外」が入っている行のみ表示しています（単なるコース変更は対象外）。新コース開始週（J列）の早い順に並んでいます（日付未設定は最後）。</p>
+          <div id="courseChangeCoachListContent" class="space-y-2 text-sm"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 汎用の詳細テキスト表示モーダル（コース変更詳細／コーチ変更詳細のポップアップ表示に共用） -->
+  <div id="textDetailModal" class="hidden fixed inset-0 z-[60]">
+    <div id="textDetailBackdrop" class="absolute inset-0 bg-dark/60"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-3 md:p-6">
+      <div class="relative bg-white w-full max-w-lg max-h-[80vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+        <div class="flex items-center justify-between px-4 py-3 bg-dark text-white shrink-0">
+          <p class="font-bold text-sm flex items-center gap-2" id="textDetailTitle"><span class="material-icons-round text-base">description</span>詳細</p>
+          <button id="closeTextDetailBtn" class="w-8 h-8 rounded-full hover:bg-white/10 flex items-center justify-center transition">
+            <span class="material-icons-round">close</span>
+          </button>
+        </div>
+        <div class="flex-1 overflow-y-auto p-4 bg-[#EEF3F5]">
+          <p class="text-sm text-dark/80 whitespace-pre-wrap" id="textDetailBody">—</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- 起票確認モーダル（コーチへの引き継ぎ事項を入力できる） -->
   <div id="createConfirmModal" class="hidden fixed inset-0 z-50">
     <div id="createConfirmBackdrop" class="absolute inset-0 bg-dark/60"></div>
@@ -1118,7 +1160,7 @@ let currentRole = 'admin';
 function updateAdminOnlyButtonsVisibility(){
   const isAdmin = currentRole === 'admin';
   const visibleDisplay = window.matchMedia('(min-width: 640px)').matches ? 'flex' : 'none';
-  ['crmLink', 'fixListBtn', 'coachChangeListBtn'].forEach((id) => {
+  ['crmLink', 'fixListBtn', 'coachChangeListBtn', 'courseChangeCoachListBtn'].forEach((id) => {
     $(id).style.display = isAdmin ? visibleDisplay : 'none';
   });
 }
@@ -1271,11 +1313,99 @@ function prefillCreateFromListRow(row, typeId){
   showToast('起票フォームに内容を入力しました。内容を確認して起票してください。');
 }
 
+// ========================= コース変更に伴うコーチ変更対応リスト モーダル =========================
+function openCourseChangeCoachList(){
+  $('courseChangeCoachListModal').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+  $('courseChangeCoachListContent').innerHTML = '<p class="text-xs text-dark/40 py-6 text-center">読み込み中…</p>';
+  apiGet('getCourseChangeCoachRows')
+    .then((rows) => renderCourseChangeCoachList(rows))
+    .catch((err) => {
+      $('courseChangeCoachListContent').innerHTML = '<p class="text-xs text-cta font-bold py-6 text-center">読み込みに失敗しました: ' + err.message + '</p>';
+    });
+}
+function closeCourseChangeCoachList(){
+  $('courseChangeCoachListModal').classList.add('hidden');
+  document.body.style.overflow = '';
+}
+function renderCourseChangeCoachList(rows){
+  const box = $('courseChangeCoachListContent');
+  if (!rows || rows.length === 0) {
+    box.innerHTML = '<p class="text-xs text-dark/40 py-6 text-center">コーチ変更を伴うコース変更（変更フラグあり）の行はありません。</p>';
+    return;
+  }
+  box.innerHTML = '';
+  rows.forEach((r) => {
+    const flagBadges = [];
+    if (r.hasAdd) flagBadges.push('<span class="inline-block px-2 py-0.5 rounded-full bg-main/10 text-main text-[11px] font-bold">コーチ追加</span>');
+    if (r.hasRemove) flagBadges.push('<span class="inline-block px-2 py-0.5 rounded-full bg-cta/10 text-cta text-[11px] font-bold">コーチ除外</span>');
+
+    const card = document.createElement('div');
+    card.className = 'bg-white border border-light rounded-lg p-3';
+    let html =
+      '<div class="flex items-center justify-between gap-2">' +
+      '<p class="font-bold text-sm">' + (r.newCourseStartWeek ? formatTargetWeek(r.newCourseStartWeek) : '（開始週未設定）') + '</p>' +
+      '<p class="text-dark/50 text-xs shrink-0">' + r.studentName + '（' + r.studentCode + '）</p>' +
+      '</div>' +
+      '<p class="text-dark/70 text-xs mt-1">' + (r.oldCourse || '—') + ' → ' + (r.newCourse || '—') + '</p>' +
+      '<p class="text-dark/50 text-xs">受験科目: ' + (r.examSubjects || '—') + '</p>' +
+      '<div class="flex items-center gap-1.5 mt-1.5">' + flagBadges.join('') + '</div>';
+
+    if (r.hasAdd) {
+      html +=
+        '<div class="mt-2 pt-2 border-t border-light/70">' +
+        '<p class="text-main text-xs">新コーチ候補: ' + (r.newCoachCandidate || '—') + '</p>' +
+        '<p class="text-dark/50 text-xs">指導内容: ' + (r.newCoachContent || '—') + '</p>' +
+        '<p class="text-dark/50 text-xs">新コーチ指導科目: ' + (r.newCoachSubject || '—') + '</p>' +
+        '</div>';
+    }
+    if (r.hasRemove) {
+      html +=
+        '<div class="mt-2 pt-2 border-t border-light/70">' +
+        '<p class="text-dark/50 text-xs">管理ID: ' + (r.managementId || '—') + '</p>' +
+        '<p class="text-dark/50 text-xs">旧コーチ氏名: ' + (r.oldCoachName || '—') + '</p>' +
+        '</div>';
+    }
+
+    html +=
+      '<div class="flex gap-2 mt-2">' +
+      '<button class="courseDetailBtn flex-1 py-1.5 rounded-lg border border-light text-dark/70 text-xs font-bold hover:bg-light/40 active:scale-[.98] transition flex items-center justify-center gap-1">' +
+      '<span class="material-icons-round text-sm">description</span>コース変更詳細</button>' +
+      '<button class="coachDetailBtn flex-1 py-1.5 rounded-lg border border-light text-dark/70 text-xs font-bold hover:bg-light/40 active:scale-[.98] transition flex items-center justify-center gap-1">' +
+      '<span class="material-icons-round text-sm">description</span>コーチ変更詳細</button>' +
+      '</div>';
+
+    card.innerHTML = html;
+    card.querySelector('.courseDetailBtn').onclick = () => openTextDetailModal('コース変更詳細', r.courseChangeDetail);
+    card.querySelector('.coachDetailBtn').onclick = () => openTextDetailModal('コーチ変更詳細', r.coachChangeDetail);
+    box.appendChild(card);
+  });
+}
+$('courseChangeCoachListBtn').onclick = openCourseChangeCoachList;
+$('closeCourseChangeCoachListBtn').onclick = closeCourseChangeCoachList;
+$('courseChangeCoachListBackdrop').onclick = closeCourseChangeCoachList;
+
+// ========================= 汎用の詳細テキスト表示モーダル =========================
+function openTextDetailModal(title, text){
+  $('textDetailTitle').innerHTML = '<span class="material-icons-round text-base">description</span>' + title;
+  $('textDetailBody').textContent = text || '（内容が入力されていません）';
+  $('textDetailModal').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+function closeTextDetailModal(){
+  $('textDetailModal').classList.add('hidden');
+  document.body.style.overflow = '';
+}
+$('closeTextDetailBtn').onclick = closeTextDetailModal;
+$('textDetailBackdrop').onclick = closeTextDetailModal;
+
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   closeManual();
   closeFixList();
   closeCoachChangeList();
+  closeCourseChangeCoachList();
+  closeTextDetailModal();
   closeApproveModal();
   closeProgressDetail();
   closeCreateConfirmModal();
