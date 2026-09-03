@@ -1395,6 +1395,7 @@ function renderCourseChangeCoachList(rows){
     if (r.hasAdd) {
       html +=
         '<div class="mt-2 pt-2 border-t border-light/70">' +
+        '<p class="text-[11px] font-bold text-main mb-0.5">新コーチ情報</p>' +
         '<p class="text-main text-xs">新コーチ候補: ' + (r.newCoachCandidate || '—') + '</p>' +
         '<p class="text-dark/50 text-xs">指導内容: ' + (r.newCoachContent || '—') + '</p>' +
         '<p class="text-dark/50 text-xs">新コーチ指導科目: ' + (r.newCoachSubject || '—') + '</p>' +
@@ -1403,6 +1404,7 @@ function renderCourseChangeCoachList(rows){
     if (r.hasRemove) {
       html +=
         '<div class="mt-2 pt-2 border-t border-light/70">' +
+        '<p class="text-[11px] font-bold text-cta mb-0.5">旧コーチ情報</p>' +
         '<p class="text-dark/50 text-xs">管理ID: ' + (r.managementId || '—') + '</p>' +
         '<p class="text-dark/50 text-xs">旧コーチ氏名: ' + (r.oldCoachName || '—') + '</p>' +
         '</div>';
@@ -1420,7 +1422,7 @@ function renderCourseChangeCoachList(rows){
     if (r.hasRemove) {
       actionButtons.push(
         '<button class="exitNoticeBtn flex-1 py-1.5 rounded-lg bg-cta text-white text-xs font-bold hover:brightness-105 active:scale-[.98] transition flex items-center justify-center gap-1">' +
-        '<span class="material-icons-round text-sm">mail</span>担当終了通知を送信</button>'
+        '<span class="material-icons-round text-sm">mail</span>旧コーチへ担当終了通知を送信</button>'
       );
     }
     if (r.hasAdd) {
@@ -1452,29 +1454,38 @@ $('courseChangeCoachListBtn').onclick = openCourseChangeCoachList;
 $('closeCourseChangeCoachListBtn').onclick = closeCourseChangeCoachList;
 $('courseChangeCoachListBackdrop').onclick = closeCourseChangeCoachList;
 
-// 「担当終了通知を送信」ボタンから呼ばれる。実際にメールが2件（旧コーチ・生徒）送信されるため、
+// 「旧コーチへ担当終了通知を送信」ボタンから呼ばれる。旧コーチへのメール送信のみを行う
+// （生徒への案内は、生徒の日程調整リンクを開いた際の確認画面で行う）。
 // 送信前に必ず確認ダイアログを挟む。送信成功後はボタンを「送信済み」表示に変え、
 // 誤って連続クリックできないようにする。
 function onSendCourseChangeExitNotice(row, btn){
-  const confirmMsg = row.studentName + 'さん（' + row.studentCode + '）について、\n'
-    + '・旧コーチ「' + (row.oldCoachName || '—') + '」へ担当終了のお知らせメール\n'
-    + '・生徒へ「いつまで旧コーチ／いつから新コーチか」の確認メール\n'
-    + 'をそれぞれ送信します。よろしいですか？';
+  const confirmMsg = row.hasAdd
+    ? (row.studentName + 'さん（' + row.studentCode + '）について、\n'
+      + '旧コーチ「' + (row.oldCoachName || '—') + '」へ担当終了のお知らせメールを送信します。\n'
+      + '（この行には「コーチ追加」も含まれるため、生徒への案内は新コーチとの日程調整リンクを開いた際の確認画面で行われます）\n\n'
+      + 'よろしいですか？')
+    : (row.studentName + 'さん（' + row.studentCode + '）について、\n'
+      + '・旧コーチ「' + (row.oldCoachName || '—') + '」へ担当終了のお知らせメール\n'
+      + '・生徒へ「いつまで旧コーチ／いつから新体制か」の確認メール\n'
+      + 'をそれぞれ送信します（この行は「コーチ除外のみ」のため、生徒にも直接お知らせします）。\n\n'
+      + 'よろしいですか？');
   if (!confirm(confirmMsg)) return;
 
   btn.disabled = true;
   btn.innerHTML = '<span class="material-icons-round text-sm">hourglass_top</span>送信中…';
   apiPost('notifyCourseChangeCoachExit', { rowNumber: row.rowNumber })
-    .then(() => {
+    .then((res) => {
       btn.innerHTML = '<span class="material-icons-round text-sm">check</span>送信済み';
       btn.classList.remove('bg-cta');
       btn.classList.add('bg-dark/30');
-      showToast('担当終了通知を送信しました（進行中の調整／未確認アラートで確認状況を追えます）');
+      showToast(res.studentNotified
+        ? '旧コーチ・生徒へ担当終了通知を送信しました（進行中の調整／未確認アラートで確認状況を追えます）'
+        : '旧コーチへ担当終了通知を送信しました（進行中の調整／未確認アラートで確認状況を追えます）');
       loadDashboard();
     })
     .catch((err) => {
       btn.disabled = false;
-      btn.innerHTML = '<span class="material-icons-round text-sm">mail</span>担当終了通知を送信';
+      btn.innerHTML = '<span class="material-icons-round text-sm">mail</span>旧コーチへ担当終了通知を送信';
       showToast('送信に失敗しました: ' + err.message, true);
     });
 }
@@ -2523,6 +2534,8 @@ function renderPending(items){
       (it.createdBy ? '<p class="text-dark/40">起票者: ' + it.createdBy + '</p>' : '') +
       '<p class="text-main font-bold">' + (it.slot ? fmtSlot(it.slot) : '（時間未取得）') + '</p>' +
       '<button class="showLinksLinkBtn text-[11px] text-sub font-bold flex items-center gap-0.5 mt-1"><span class="material-icons-round text-sm">link</span>リンクを表示</button>' +
+      (it.courseChangeDetail ? '<button class="pendingCourseDetailBtn text-[11px] text-sub font-bold flex items-center gap-0.5 mt-1"><span class="material-icons-round text-sm">description</span>コース変更詳細</button>' : '') +
+      (it.coachChangeDetail ? '<button class="pendingCoachChangeDetailBtn text-[11px] text-sub font-bold flex items-center gap-0.5 mt-1"><span class="material-icons-round text-sm">description</span>コーチ変更詳細</button>' : '') +
       '</div>' +
       '<div class="shrink-0 flex flex-col items-end gap-1.5">' +
       '<button class="approveBtn px-3 py-2 rounded-lg bg-cta text-white text-xs font-bold hover:brightness-105">承認</button>' +
@@ -2531,6 +2544,10 @@ function renderPending(items){
     card.querySelector('.approveBtn').onclick = () => openApproveModal(it.cid, card);
     card.querySelector('.showLinksLinkBtn').onclick = () => openLinksModal(it.cid);
     card.querySelector('.cancelBtn').onclick = () => cancelAssignmentPrompt(it.cid, () => card.remove());
+    const pendingCourseDetailBtn = card.querySelector('.pendingCourseDetailBtn');
+    if (pendingCourseDetailBtn) pendingCourseDetailBtn.onclick = () => openTextDetailModal('コース変更詳細', it.courseChangeDetail);
+    const pendingCoachChangeDetailBtn = card.querySelector('.pendingCoachChangeDetailBtn');
+    if (pendingCoachChangeDetailBtn) pendingCoachChangeDetailBtn.onclick = () => openTextDetailModal('コーチ変更詳細', it.coachChangeDetail);
     wrap.appendChild(card);
   });
 }
@@ -2608,11 +2625,21 @@ function renderAlerts(items){
       '</div>' +
       '<button class="cancelBtn shrink-0 w-8 h-8 flex items-center justify-center rounded-lg bg-cta text-white hover:brightness-105 active:scale-95 transition shadow-sm" title="対応不要にする"><span class="material-icons-round text-lg">delete_outline</span></button>' +
       '</div>' +
+      (it.courseChangeDetail || it.coachChangeDetail
+        ? '<div class="flex gap-2">' +
+          (it.courseChangeDetail ? '<button class="alertCourseDetailBtn flex-1 px-2 py-1.5 rounded-lg bg-white border border-light text-dark/70 text-[11px] font-bold hover:bg-light/40 transition flex items-center justify-center gap-1"><span class="material-icons-round text-sm">description</span>コース変更詳細</button>' : '') +
+          (it.coachChangeDetail ? '<button class="alertCoachChangeDetailBtn flex-1 px-2 py-1.5 rounded-lg bg-white border border-light text-dark/70 text-[11px] font-bold hover:bg-light/40 transition flex items-center justify-center gap-1"><span class="material-icons-round text-sm">description</span>コーチ変更詳細</button>' : '') +
+          '</div>'
+        : '') +
       '<button class="resendConfirmBtn w-full px-3 py-2 rounded-lg bg-white border border-cta text-cta text-xs font-bold hover:bg-cta/10 transition flex items-center justify-center gap-1">' +
       '<span class="material-icons-round text-sm">forward_to_inbox</span>確定連絡メールを再送</button>';
 
     card.querySelector('.showLinksLinkBtn').onclick = () => openLinksModal(it.cid);
     card.querySelector('.cancelBtn').onclick = () => cancelAssignmentPrompt(it.cid, () => card.remove());
+    const alertCourseDetailBtn = card.querySelector('.alertCourseDetailBtn');
+    if (alertCourseDetailBtn) alertCourseDetailBtn.onclick = () => openTextDetailModal('コース変更詳細', it.courseChangeDetail);
+    const alertCoachChangeDetailBtn = card.querySelector('.alertCoachChangeDetailBtn');
+    if (alertCoachChangeDetailBtn) alertCoachChangeDetailBtn.onclick = () => openTextDetailModal('コーチ変更詳細', it.coachChangeDetail);
 
     const resendBtn = card.querySelector('.resendConfirmBtn');
     resendBtn.onclick = () => {
@@ -2713,7 +2740,25 @@ function openProgressDetail(it){
     lines.push('<div class="bg-sub/10 border border-sub rounded-lg p-2.5 mt-1"><p class="text-[11px] font-bold text-sub mb-0.5">コーチへの引き継ぎ事項</p><p class="whitespace-pre-wrap text-dark/80">' + it.handoverNote + '</p></div>');
   }
 
-  let actionHtml =
+  let actionHtml = '';
+  // コース変更に伴うコーチ変更（c-0004）を「コース変更対応リスト」経由で起票した場合のみ、
+  // 起票元のコース変更詳細・コーチ変更詳細をここからも確認できるようにする。
+  if (it.courseChangeDetail || it.coachChangeDetail) {
+    actionHtml += '<div class="flex gap-2 mt-3">';
+    if (it.courseChangeDetail) {
+      actionHtml +=
+        '<button id="progressCourseDetailBtn" type="button" class="flex-1 py-2 rounded-lg border border-light text-dark/70 text-xs font-bold hover:bg-light/40 transition flex items-center justify-center gap-1">' +
+        '<span class="material-icons-round text-sm">description</span>コース変更詳細</button>';
+    }
+    if (it.coachChangeDetail) {
+      actionHtml +=
+        '<button id="progressCoachChangeDetailBtn" type="button" class="flex-1 py-2 rounded-lg border border-light text-dark/70 text-xs font-bold hover:bg-light/40 transition flex items-center justify-center gap-1">' +
+        '<span class="material-icons-round text-sm">description</span>コーチ変更詳細</button>';
+    }
+    actionHtml += '</div>';
+  }
+
+  actionHtml +=
     '<button id="showLinksBtn" type="button" class="w-full mt-3 py-2.5 rounded-lg border border-light text-dark/70 text-sm font-bold hover:bg-light/30 transition flex items-center justify-center gap-1.5">' +
     '<span class="material-icons-round text-base">link</span>リンクを表示</button>';
   if (it.status === 'コーチ回答待ち') {
@@ -2732,6 +2777,11 @@ function openProgressDetail(it){
 
   $('showLinksBtn').onclick = () => { closeProgressDetail(); openLinksModal(it.cid); };
   $('cancelAssignmentBtn').onclick = () => cancelAssignmentPrompt(it.cid, closeProgressDetail);
+
+  const courseDetailBtn = document.getElementById('progressCourseDetailBtn');
+  if (courseDetailBtn) courseDetailBtn.onclick = () => openTextDetailModal('コース変更詳細', it.courseChangeDetail);
+  const coachChangeDetailBtn = document.getElementById('progressCoachChangeDetailBtn');
+  if (coachChangeDetailBtn) coachChangeDetailBtn.onclick = () => openTextDetailModal('コーチ変更詳細', it.coachChangeDetail);
 
   const btn = document.getElementById('forceNextCoachBtn');
   if (btn) {
