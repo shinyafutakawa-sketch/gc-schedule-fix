@@ -1392,6 +1392,18 @@ function renderCourseChangeCoachList(rows){
       '<p class="text-dark/50 text-xs">受験科目: ' + (r.examSubjects || '—') + '</p>' +
       '<div class="flex items-center gap-1.5 mt-1.5">' + flagBadges.join('') + '</div>';
 
+    // コーチ変更対応リスト（c-0003）と同様、生徒マスタの学年・志望校・コースを
+    // 起票前の時点で確認できるようにする（1件も無ければブロック自体を出さない）。
+    if (r.studentGrade || r.studentDesiredSchool || r.studentCourse) {
+      html +=
+        '<div class="mt-2 pt-2 border-t border-light/70">' +
+        '<p class="text-[11px] font-bold text-sub mb-0.5">生徒情報</p>' +
+        (r.studentGrade ? '<p class="text-dark/50 text-xs">学年: ' + r.studentGrade + '</p>' : '') +
+        (r.studentDesiredSchool ? '<p class="text-dark/50 text-xs">志望校: ' + r.studentDesiredSchool + '</p>' : '') +
+        (r.studentCourse ? '<p class="text-dark/50 text-xs">コース: ' + r.studentCourse + '</p>' : '') +
+        '</div>';
+    }
+
     if (r.hasAdd) {
       html +=
         '<div class="mt-2 pt-2 border-t border-light/70">' +
@@ -2426,7 +2438,11 @@ function onCreateAssignment(){
     targetWeek = selectedExternalCombo.startWeek;
   }
 
-  pendingCreateContext = { studentId, typeId, coachId, createdBy: createdBy || '管理者', targetWeek, externalRowNumber };
+  // 「コース変更対応リスト」の「この内容で起票する」経由の場合のみ、起票と同じリクエストの中で
+  // コース変更_fixシートのAA列へcidを書き込む（起票そのものと1回のAPI呼び出しで完結させる）。
+  const courseChangeRowNumber = (typeId === COURSE_CHANGE_TYPE_ID) ? pendingCourseChangeSourceRow : null;
+
+  pendingCreateContext = { studentId, typeId, coachId, createdBy: createdBy || '管理者', targetWeek, externalRowNumber, courseChangeRowNumber };
 
   const studentLabel = $('newStudentSearch').value || studentId;
   const coachLabel = $('newCoachSearch').value || coachId;
@@ -2437,7 +2453,8 @@ function onCreateAssignment(){
     '<p><span class="text-dark/40">面談種別：</span>' + typeLabel + '</p>' +
     '<p><span class="text-dark/40">対象の生徒：</span>' + studentLabel + '</p>' +
     '<p><span class="text-dark/40">担当コーチ：</span>' + coachLabel + '</p>' +
-    (targetWeek ? '<p><span class="text-dark/40">対象週：</span>' + formatTargetWeek(targetWeek) + '</p>' : '');
+    (targetWeek ? '<p><span class="text-dark/40">対象週：</span>' + formatTargetWeek(targetWeek) + '</p>' : '') +
+    (courseChangeRowNumber ? '<p><span class="text-dark/40">コース変更_fix連携：</span>あり（' + courseChangeRowNumber + '行目に紐付け）</p>' : '');
   $('createHandoverNote').value = '';
   $('createConfirmModal').classList.remove('hidden');
   document.body.style.overflow = 'hidden';
@@ -2465,14 +2482,8 @@ $('createConfirmSubmitBtn').onclick = () => {
       btn.textContent = '発行する';
       closeCreateConfirmModal();
       pendingCreateContext = null;
-
-      // コース変更対応リストの「起票」ボタン経由で作成した場合のみ、
-      // 元のコース変更_fixシート行（T列）に発行されたcidを書き戻しておく
-      // （承認後にX/Y/Z列へ確定内容を書き込む際の検索キーになる）。
-      if (pendingCourseChangeSourceRow && res.cid) {
-        apiPost('markCourseChangeRowUsed', { rowNumber: pendingCourseChangeSourceRow, cid: res.cid })
-          .catch((err) => showToast('コース変更_fixシートへの紐付けに失敗しました: ' + err.message, true));
-      }
+      // 紐付けは起票（createAssignment）と同じリクエストの中で完結しているため、
+      // ここでの別呼び出しは不要。UI上の状態だけリセットしておく。
       pendingCourseChangeSourceRow = null;
 
       $('createResult').classList.remove('hidden');
