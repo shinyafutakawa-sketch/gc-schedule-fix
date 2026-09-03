@@ -2219,6 +2219,10 @@ const COACH_CHANGE_TYPE_ID = 'c-0003';
 // （コース変更_fixリストの「起票」ボタンから、対象週・担当コーチをあらかじめ入力した状態で起票する）。
 // ※ コード.gs の CONFIG.COURSE_CHANGE_TYPE_ID と必ず同じ値にすること。
 const COURSE_CHANGE_TYPE_ID = 'c-0004';
+// 「コース変更対応リスト」の「担当終了通知を送信」（コーチ除外のみ）から作られた起票データの
+// 「起票者」列に入る目印。この起票かどうかを判定し、表示ラベルを出し分けるために使う。
+// ※ コード.gs の CONFIG.COURSE_CHANGE_EXIT_NOTICE_CREATED_BY と必ず同じ値にすること。
+const COURSE_CHANGE_EXIT_NOTICE_CREATED_BY = '（コース変更_fixリストより自動作成）';
 let selectedExternalCombo = null;
 // 一覧モーダル（初回FIXリスト／コーチ変更対応リスト）から「起票」ボタンで遷移してきた場合、
 // 組み合わせ一覧が読み込まれた時点で自動選択すべき行番号を一時的に保持する。
@@ -2612,13 +2616,18 @@ function renderAlerts(items){
     const daysLabel = (it.overdueDays !== null && it.overdueDays !== undefined)
       ? (it.overdueDays > 0 ? (it.overdueDays + '日超過') : (Math.abs(it.overdueDays) + '日前'))
       : (it.daysSinceFixed !== null && it.daysSinceFixed !== undefined ? ('確定連絡から' + it.daysSinceFixed + '日経過') : '');
+    // 「コース変更対応リスト」の「担当終了通知を送信」（コーチ除外のみ）から作られた起票は、
+    // ENTRIES上の「コーチ」が実質「旧コーチ」を指すため、表示ラベルもそれに合わせる。
+    const isCourseChangeExitNotice = it.typeId === COURSE_CHANGE_TYPE_ID
+      && it.createdBy === COURSE_CHANGE_EXIT_NOTICE_CREATED_BY;
+    const coachLabel = isCourseChangeExitNotice ? '旧コーチ' : 'コーチ';
 
     card.className = 'bg-cta/10 border border-cta rounded-xl p-4 text-xs space-y-2';
     card.innerHTML =
       '<div class="flex items-start gap-2">' +
       '<span class="material-icons-round text-cta text-lg shrink-0">warning</span>' +
       '<div class="min-w-0 flex-1"><p class="font-bold">' + it.studentName + ' × ' + it.coachName + '</p>' +
-      '<p class="text-dark/60">確定日時: ' + (it.slot ? fmtSlot(it.slot) : '（時間未取得）') + '（対象週: ' + weekLabel + (daysLabel ? ' / ' + daysLabel : '') + '）　生徒:' + (it.studentConfirmed ? '済' : '未') + ' / コーチ:' + (it.coachConfirmed ? '済' : '未') + ((it.typeId === COACH_CHANGE_TYPE_ID || (it.typeId === COURSE_CHANGE_TYPE_ID && it.hasCourseChangeOldCoach)) ? ' / 旧コーチ:' + (it.oldCoachConfirmed ? '済' : '未') : '') + '</p>' +
+      '<p class="text-dark/60">確定日時: ' + (it.slot ? fmtSlot(it.slot) : '（時間未取得）') + '（対象週: ' + weekLabel + (daysLabel ? ' / ' + daysLabel : '') + '）　生徒:' + (it.studentConfirmed ? '済' : '未') + ' / ' + coachLabel + ':' + (it.coachConfirmed ? '済' : '未') + ((!isCourseChangeExitNotice && (it.typeId === COACH_CHANGE_TYPE_ID || (it.typeId === COURSE_CHANGE_TYPE_ID && it.hasCourseChangeOldCoach))) ? ' / 旧コーチ:' + (it.oldCoachConfirmed ? '済' : '未') : '') + '</p>' +
       '<button class="showLinksLinkBtn text-[11px] text-sub font-bold flex items-center gap-0.5 mt-1"><span class="material-icons-round text-sm">link</span>リンクを表示</button>' +
       '</div>' +
       '<button class="cancelBtn shrink-0 w-8 h-8 flex items-center justify-center rounded-lg bg-cta text-white hover:brightness-105 active:scale-95 transition shadow-sm" title="対応不要にする"><span class="material-icons-round text-lg">delete_outline</span></button>' +
